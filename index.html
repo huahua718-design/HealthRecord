@@ -19,9 +19,22 @@
     .metric-box { text-align: center; padding: 12px; border-radius: 8px; background-color: #eef2f7; height: 100%; }
     .metric-value { font-size: 1.4rem; font-weight: bold; color: #2c3e50; }
     .metric-label { font-size: 0.85rem; color: #6c757d; }
+    
+    /* 載入遮照動畫 */
+    #loadingOverlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(255, 255, 255, 0.85); z-index: 9999;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+    }
   </style>
 </head>
 <body>
+  <!-- 全頁載入中遮照 -->
+  <div id="loadingOverlay">
+    <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+    <div class="mt-3 text-secondary fw-bold" id="loadingText">系統資料載入中，請稍候...</div>
+  </div>
+
   <div class="container py-4" style="max-width: 900px;">
     <!-- 頂部與成員選擇 -->
     <div class="row align-items-center mb-4">
@@ -29,14 +42,14 @@
         <h3 class="fw-bold text-primary mb-0">🎙️ 家庭健康與生長紀錄</h3>
       </div>
       <div class="col-md-6 d-flex justify-content-md-end mt-3 mt-md-0">
-        <select id="memberSelect" class="form-select me-2" style="max-width: 220px;" onchange="onMemberChange()">
+        <select id="memberSelect" class="form-select me-2" style="max-width: 220px;" onchange="onMemberSelectChange()">
           <option value="">載入成員中...</option>
         </select>
         <button class="btn btn-outline-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#addMemberModal">+ 新增成員</button>
       </div>
     </div>
 
-    <!-- 輸入區塊 (含快捷文字與語音) -->
+    <!-- 輸入區塊 -->
     <div class="card p-4">
       <h5 id="targetMemberName" class="text-secondary fw-bold mb-3">請選擇成員</h5>
       
@@ -233,7 +246,7 @@
 
   <script>
     // ⚠️ 請填入您的 Google Apps Script Web App 最新部署網址
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwJjlTNi412Yn7ygIsFiYA2jHi8p665i64s5ApVQXitcrAEZ6bFk8C99PeRku321IVC/exec";
+    const GAS_API_URL = "script.google.com/macros/s/AKfycbwJjlTNi412Yn7ygIsFiYA2jHi8p665i64s5ApVQXitcrAEZ6bFk8C99PeRku321IVC/exec";
 
     let membersList = [];
     let currentMember = null;
@@ -244,6 +257,15 @@
     let chartInstance = null;
     let activeChildMetric = 'height';
     let currentParsedVoiceData = null;
+
+    function showLoading(msg = '資料載入中...') {
+      document.getElementById('loadingText').textContent = msg;
+      document.getElementById('loadingOverlay').style.display = 'flex';
+    }
+
+    function hideLoading() {
+      document.getElementById('loadingOverlay').style.display = 'none';
+    }
 
     async function apiRequest(action, method = 'GET', data = null) {
       try {
@@ -290,24 +312,24 @@
     }
 
     window.onload = function() {
-      loadMembers();
+      initApp();
     };
 
-    function toggleFieldsByMemberType() {
-      const type = document.getElementById('newMemberType').value;
-      document.getElementById('childFields').style.display = type === 'Child' ? 'block' : 'none';
-    }
-
-    async function loadMembers() {
+    // 🚀 單次請求初始化：大幅減少載入等待時間
+    async function initApp() {
+      showLoading('喚醒雲端資料庫中...');
       try {
-        membersList = await apiRequest('getMembers');
+        const initData = await apiRequest('getInitialData');
+        membersList = initData.members || [];
+        
         const select = document.getElementById('memberSelect');
         select.innerHTML = '';
-        
-        if (!membersList || membersList.length === 0) {
+
+        if (membersList.length === 0) {
           select.innerHTML = '<option value="">請先新增成員</option>';
           document.getElementById('recordBtn').disabled = true;
           document.getElementById('btnQuickSubmit').disabled = true;
+          hideLoading();
           return;
         }
 
@@ -318,43 +340,61 @@
           select.appendChild(opt);
         });
 
-        onMemberChange();
+        if (initData.selectedId) {
+          select.value = initData.selectedId;
+        }
+
+        currentMember = membersList.find(m => m.id === select.value);
+        currentRecords = initData.records || [];
+
+        renderMemberUI();
       } catch (err) {
         console.error(err);
+      } finally {
+        hideLoading();
       }
     }
 
-    function onMemberChange() {
+    async function onMemberSelectChange() {
       const select = document.getElementById('memberSelect');
       const memberId = select.value;
       currentMember = membersList.find(m => m.id === memberId);
-
       if (!currentMember) return;
 
+      showLoading('切換成員資料中...');
+      try {
+        currentRecords = await apiRequest('getMemberRecords', 'GET', { memberId });
+        renderMemberUI();
+      } finally {
+        hideLoading();
+      }
+    }
+
+    function renderMemberUI() {
       document.getElementById('targetMemberName').textContent = `當前對象：${currentMember.name}`;
       document.getElementById('recordBtn').disabled = false;
       document.getElementById('btnQuickSubmit').disabled = false;
       
       const isAdult = currentMember.type === 'Adult';
-      
-      // 更新快捷單行輸入提示
       const inputEl = document.getElementById('quickInputText');
       const hintEl = document.getElementById('quickInputHint');
+
       if (isAdult) {
         inputEl.placeholder = '例：705 201 523 6';
-        hintEl.innerHTML = '請依序輸入：<b>體重 體脂 肌肉量 內臟脂肪</b>（以空格分隔，不需小數點，例如 <code>705 201 523 6</code> 代表 70.5kg / 20.1% / 52.3kg / 內臟6）';
+        hintEl.innerHTML = '請依序輸入：<b>體重 體脂 肌肉量 內臟脂肪</b>（以空格分隔，不需小數點，例如 <code>705 201 523 6</code>）';
       } else {
         inputEl.placeholder = '例：1155 205';
-        hintEl.innerHTML = '請依序輸入：<b>身高 體重</b>（以空格分隔，不需小數點，例如 <code>1155 205</code> 代表 115.5cm / 20.5kg）';
+        hintEl.innerHTML = '請依序輸入：<b>身高 體重</b>（以空格分隔，不需小數點，例如 <code>1155 205</code>）';
       }
 
       document.getElementById('childChartToggle').style.display = isAdult ? 'none' : 'inline-flex';
       document.getElementById('chartTitle').textContent = isAdult ? '歷史趨勢圖' : '兒童生長曲線對照圖 (WHO)';
 
-      loadMemberData(currentMember.id);
+      renderMetrics(currentRecords);
+      renderTable(currentRecords);
+      renderChart(currentRecords);
     }
 
-    // 快捷單行輸入處理邏輯
     async function submitQuickInput() {
       if (!currentMember) return;
       const text = document.getElementById('quickInputText').value.trim();
@@ -363,7 +403,6 @@
       const tokens = text.split(/\s+/);
       const isAdult = currentMember.type === 'Adult';
 
-      // 輔助解析：若帶小數點則直接取浮點數，否則除以 10
       const parseVal = (str, isInteger = false) => {
         if (!str) return null;
         if (str.includes('.')) return parseFloat(str);
@@ -373,12 +412,8 @@
       };
 
       let parsedData = {};
-
       if (isAdult) {
-        if (tokens.length < 4) {
-          alert('成人格式請依序輸入 4 個數字：體重 體脂 肌肉量 內臟脂肪（以空格分隔）');
-          return;
-        }
+        if (tokens.length < 4) { alert('成人格式請依序輸入 4 個數字：體重 體脂 肌肉量 內臟脂肪'); return; }
         parsedData = {
           weight: parseVal(tokens[0]),
           bodyFat: parseVal(tokens[1]),
@@ -388,24 +423,24 @@
           transcript: `快速單行輸入: ${text}`
         };
       } else {
-        if (tokens.length < 2) {
-          alert('小孩格式請依序輸入 2 個數字：身高 體重（以空格分隔）');
-          return;
-        }
+        if (tokens.length < 2) { alert('小孩格式請依序輸入 2 個數字：身高 體重'); return; }
         parsedData = {
           height: parseVal(tokens[0]),
           weight: parseVal(tokens[1]),
-          bodyFat: null,
-          muscleMass: null,
-          visceralFat: null,
+          bodyFat: null, muscleMass: null, visceralFat: null,
           transcript: `快速單行輸入: ${text}`
         };
       }
 
-      await apiRequest('saveRecord', 'POST', { memberId: currentMember.id, parsedData });
-      document.getElementById('quickInputText').value = '';
-      alert('✅ 紀錄成功！');
-      loadMemberData(currentMember.id);
+      showLoading('儲存數據中...');
+      try {
+        await apiRequest('saveRecord', 'POST', { memberId: currentMember.id, parsedData });
+        document.getElementById('quickInputText').value = '';
+        currentRecords = await apiRequest('getMemberRecords', 'GET', { memberId: currentMember.id });
+        renderMemberUI();
+      } finally {
+        hideLoading();
+      }
     }
 
     async function submitNewMember() {
@@ -417,14 +452,18 @@
 
       if (!name) { alert('請輸入成員姓名'); return; }
 
-      await apiRequest('addMember', 'POST', { name, type, gender, birthDate, height });
-      
-      const modalEl = document.getElementById('addMemberModal');
-      const modal = bootstrap.Modal.getInstance(modalEl);
-      modal.hide();
-      document.getElementById('newMemberName').value = '';
-      document.getElementById('newMemberHeight').value = '';
-      loadMembers();
+      showLoading('新增成員中...');
+      try {
+        await apiRequest('addMember', 'POST', { name, type, gender, birthDate, height });
+        const modalEl = document.getElementById('addMemberModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+        document.getElementById('newMemberName').value = '';
+        document.getElementById('newMemberHeight').value = '';
+        await initApp();
+      } finally {
+        hideLoading();
+      }
     }
 
     async function toggleRecording() {
@@ -470,28 +509,28 @@
 
       reader.onloadend = async function() {
         const base64Audio = reader.result.split(',')[1];
+        showLoading('AI 辨識語音中...');
         try {
           const parsedResult = await apiRequest('analyzeAudio', 'POST', { base64Audio, mimeType, memberId: currentMember.id });
           document.getElementById('statusMessage').textContent = '';
           document.getElementById('recordBtn').disabled = false;
-          
           showVoiceConfirmModal(parsedResult);
         } catch (err) {
           document.getElementById('statusMessage').textContent = '';
           document.getElementById('recordBtn').disabled = false;
+        } finally {
+          hideLoading();
         }
       };
 
       reader.readAsDataURL(audioBlob);
     }
 
-    // 顯示語音辨識確認對話框
     function showVoiceConfirmModal(data) {
       currentParsedVoiceData = data;
       const isAdult = currentMember.type === 'Adult';
 
       document.getElementById('voiceTranscript').textContent = data.transcript || '（無辨識文字）';
-
       document.querySelectorAll('.adult-confirm').forEach(el => el.style.display = isAdult ? 'flex' : 'none');
       document.querySelectorAll('.child-confirm').forEach(el => el.style.display = isAdult ? 'none' : 'flex');
 
@@ -531,21 +570,18 @@
         transcript: `語音錄製: ${currentParsedVoiceData?.transcript || ''}`
       };
 
-      await apiRequest('saveRecord', 'POST', { memberId: currentMember.id, parsedData });
+      showLoading('寫入試算表中...');
+      try {
+        await apiRequest('saveRecord', 'POST', { memberId: currentMember.id, parsedData });
+        const modalEl = document.getElementById('confirmVoiceModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        modal.hide();
 
-      const modalEl = document.getElementById('confirmVoiceModal');
-      const modal = bootstrap.Modal.getInstance(modalEl);
-      modal.hide();
-
-      alert('✅ 成功寫入 Google Sheet！');
-      loadMemberData(currentMember.id);
-    }
-
-    async function loadMemberData(memberId) {
-      currentRecords = await apiRequest('getMemberRecords', 'GET', { memberId });
-      renderMetrics(currentRecords);
-      renderTable(currentRecords);
-      renderChart(currentRecords);
+        currentRecords = await apiRequest('getMemberRecords', 'GET', { memberId: currentMember.id });
+        renderMemberUI();
+      } finally {
+        hideLoading();
+      }
     }
 
     function switchChildMetric(metric) {
