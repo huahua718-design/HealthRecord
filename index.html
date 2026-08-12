@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>家庭健康與生長曲線紀錄系統</title>
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { background-color: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .card { border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; border: none; }
+    .record-btn { width: 100px; height: 100px; border-radius: 50%; font-weight: bold; font-size: 1.1rem; }
+    .recording { animation: pulse 1.5s infinite; background-color: #dc3545 !important; border-color: #dc3545 !important; }
+    @keyframes pulse {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+      70% { transform: scale(1.05); box-shadow: 0 0 0 15px rgba(220, 53, 69, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+    }
+    .metric-box { text-align: center; padding: 15px; border-radius: 8px; background-color: #eef2f7; height: 100%; }
+    .metric-value { font-size: 1.5rem; font-weight: bold; color: #2c3e50; }
+    .metric-label { font-size: 0.85rem; color: #6c757d; }
+    .badge-status { font-size: 0.75rem; padding: 3px 8px; border-radius: 10px; margin-left: 4px; }
+  </style>
+</head>
+<body>
+  <div class="container py-4" style="max-width: 900px;">
+    <!-- 頂部標題與成員切換 -->
+    <div class="row align-items-center mb-4">
+      <div class="col-md-6">
+        <h3 class="fw-bold text-primary mb-0">🎙️ 家庭健康與生長紀錄</h3>
+      </div>
+      <div class="col-md-6 d-flex justify-content-md-end mt-3 mt-md-0">
+        <select id="memberSelect" class="form-select me-2" style="max-width: 220px;" onchange="onMemberChange()">
+          <option value="">載入成員中...</option>
+        </select>
+        <button class="btn btn-outline-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#addMemberModal">+ 新增成員</button>
+      </div>
+    </div>
+
+    <!-- 語音/手動輸入卡片 -->
+    <div class="card p-4 text-center">
+      <div class="mb-3">
+        <h5 id="targetMemberName" class="text-secondary">請選擇成員</h5>
+        <p id="recordHint" class="text-muted small">點擊下方按鈕開始口述數據</p>
+      </div>
+      <div class="d-flex justify-content-center align-items-center gap-3 mb-2">
+        <button id="recordBtn" class="btn btn-primary record-btn shadow" onclick="toggleRecording()" disabled>
+          🎤<br>開始錄音
+        </button>
+      </div>
+      <div class="mt-2">
+        <button id="manualBtn" class="btn btn-sm btn-link text-decoration-none" data-bs-toggle="modal" data-bs-target="#manualInputModal" disabled>
+          ⌨️ 改用手動輸入數據
+        </button>
+      </div>
+      <div id="statusMessage" class="text-info fw-bold mt-2"></div>
+    </div>
+
+    <!-- 最新數據指標面板 -->
+    <div class="card p-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold text-secondary mb-0">最新量測紀錄</h5>
+        <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#refModal">ℹ️ 標準建議值</button>
+      </div>
+      <div id="metricsContainer" class="row g-2">
+        <div class="col text-center text-muted">尚無紀錄</div>
+      </div>
+    </div>
+
+    <!-- 歷史圖表 -->
+    <div class="card p-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold text-secondary mb-0" id="chartTitle">歷史趨勢圖</h5>
+        <div id="childChartToggle" class="btn-group btn-group-sm" style="display:none;">
+          <button class="btn btn-outline-primary active" id="btnHeight" onclick="switchChildMetric('height')">身高生長曲線 (cm)</button>
+          <button class="btn btn-outline-primary" id="btnWeight" onclick="switchChildMetric('weight')">體重生長曲線 (kg)</button>
+        </div>
+      </div>
+      <div style="position: relative; height: 350px;">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+
+    <!-- 歷史紀錄表格 -->
+    <div class="card p-3">
+      <h5 class="fw-bold text-secondary mb-3">歷史紀錄表格</h5>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead id="tableHeader" class="table-light"></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 手動輸入 Modal -->
+  <div class="modal fade" id="manualInputModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">手動新增紀錄</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="manualForm">
+            <div class="mb-3 adult-field">
+              <label class="form-label">體重 (kg)</label>
+              <input type="number" step="0.1" id="mWeight" class="form-control" placeholder="例如: 70.5">
+            </div>
+            <div class="mb-3 adult-field">
+              <label class="form-label">體脂率 (%)</label>
+              <input type="number" step="0.1" id="mBodyFat" class="form-control" placeholder="例如: 20.1">
+            </div>
+            <div class="mb-3 adult-field">
+              <label class="form-label">肌肉量 (kg)</label>
+              <input type="number" step="0.1" id="mMuscle" class="form-control" placeholder="例如: 52.3">
+            </div>
+            <div class="mb-3 adult-field">
+              <label class="form-label">內臟脂肪</label>
+              <input type="number" step="1" id="mVisceral" class="form-control" placeholder="例如: 6">
+            </div>
+            <div class="mb-3 child-field" style="display:none;">
+              <label class="form-label">身高 (cm)</label>
+              <input type="number" step="0.1" id="mHeight" class="form-control" placeholder="例如: 115.5">
+            </div>
+            <div class="mb-3 child-field" style="display:none;">
+              <label class="form-label">體重 (kg)</label>
+              <input type="number" step="0.1" id="mChildWeight" class="form-control" placeholder="例如: 20.5">
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" onclick="submitManualRecord()">儲存紀錄</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增成員 Modal -->
+  <div class="modal fade" id="addMemberModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">新增成員</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">成員姓名</label>
+            <input type="text" id="newMemberName" class="form-control" placeholder="例如：爸爸、小華">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">類別</label>
+            <select id="newMemberType" class="form-select" onchange="toggleFieldsByMemberType()">
+              <option value="Adult">成人 (體重、體脂、肌肉量、內臟脂肪)</option>
+              <option value="Child">小孩 (身高、體重與生長曲線)</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">生理性別</label>
+            <select id="newMemberGender" class="form-select">
+              <option value="Boy">男性/男孩</option>
+              <option value="Girl">女性/女孩</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">預設身高 (cm)</label>
+            <input type="number" id="newMemberHeight" class="form-control" placeholder="成人計算 BMI 必填，例如：175">
+          </div>
+          <div id="childFields" style="display:none;">
+            <div class="mb-3">
+              <label class="form-label">出生年月日</label>
+              <input type="date" id="newMemberBirth" class="form-control">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" onclick="submitNewMember()">儲存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 標準對照 Modal -->
+  <div class="modal fade" id="refModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">健康標準參考值</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <h6 class="fw-bold text-primary">成人健康指標建議標準</h6>
+          <table class="table table-bordered text-center align-middle mb-4">
+            <thead class="table-light">
+              <tr><th>指標</th><th>男性標準</th><th>女性標準</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>BMI</td><td colspan="2">18.5 ~ 23.9 (正常區間)</td></tr>
+              <tr><td>體脂率</td><td>10% ~ 20%</td><td>18% ~ 28%</td></tr>
+              <tr><td>肌肉率</td><td>31% ~ 34%</td><td>25% ~ 27%</td></tr>
+              <tr><td>內臟脂肪</td><td colspan="2">1 ~ 9 (標準) / 10~14 (偏高) / ≥15 (危險)</td></tr>
+            </tbody>
+          </table>
+          <h6 class="fw-bold text-primary">兒童生長曲線參考 (WHO)</h6>
+          <p class="small text-muted mb-0">
+            • <b>P50</b>：同年齡同性別中位數。<br>
+            • <b>P3 ~ P97</b>：落在 3rd 至 97th 百分位數之間均屬正常發育範圍。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // ⚠️ 請填入您的 Google Apps Script Web App 部署網址
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwjTcp58-ALSfLqdNWj8tpWd8NTQMmm_xQMGPnyPHlMHO1y3IplGpW1NC6V-qJvUUoM2Q/exec";
+
+    let membersList = [];
+    let currentMember = null;
+    let currentRecords = [];
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
+    let chartInstance = null;
+    let activeChildMetric = 'height';
+
+    // 封裝通用 API 呼叫方法
+    async function apiRequest(action, method = 'GET', data = null) {
+      if (method === 'GET') {
+        const url = `${GAS_API_URL}?action=${action}` + (data ? `&${new URLSearchParams(data).toString()}` : '');
+        const res = await fetch(url, { redirect: 'follow' });
+        return await res.json();
+      } else {
+        // 使用 text/plain 發送 JSON 以避開 CORS preflight OPTIONS 限制
+        const res = await fetch(GAS_API_URL, {
+          method: 'POST',
+          redirect: 'follow',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: action, ...data })
+        });
+        return await res.json();
+      }
+    }
+
+    function getWHOCurve(gender, ageYears, metric) {
+      let baseP50, p3Offset, p97Offset;
+      const gFactor = gender === 'Boy' ? 1.0 : 0.96;
+
+      if (metric === 'height') {
+        baseP50 = (78 + ageYears * 6.2) * gFactor;
+        p3Offset = baseP50 * 0.05;
+        p97Offset = baseP50 * 0.05;
+      } else {
+        baseP50 = (10 + ageYears * 2.3) * gFactor;
+        p3Offset = baseP50 * 0.15;
+        p97Offset = baseP50 * 0.20;
+      }
+
+      return {
+        p3: (baseP50 - p3Offset).toFixed(1),
+        p50: baseP50.toFixed(1),
+        p97: (baseP50 + p97Offset).toFixed(1)
+      };
+    }
+
+    window.onload = function() {
+      loadMembers();
+    };
+
+    function toggleFieldsByMemberType() {
+      const type = document.getElementById('newMemberType').value;
+      document.getElementById('childFields').style.display = type === 'Child' ? 'block' : 'none';
+    }
+
+    async function loadMembers() {
+      try {
+        membersList = await apiRequest('getMembers');
+        const select = document.getElementById('memberSelect');
+        select.innerHTML = '';
+        
+        if (!membersList || membersList.length === 0) {
+          select.innerHTML = '<option value="">請先新增成員</option>';
+          document.getElementById('recordBtn').disabled = true;
+          document.getElementById('manualBtn').disabled = true;
+          return;
+        }
+
+        membersList.forEach((m) => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = `${m.name} (${m.type === 'Adult' ? '成人' : '小孩'})`;
+          select.appendChild(opt);
+        });
+
+        onMemberChange();
+      } catch (err) {
+        alert('載入成員失敗：' + err.message);
+      }
+    }
+
+    function onMemberChange() {
+      const select = document.getElementById('memberSelect');
+      const memberId = select.value;
+      currentMember = membersList.find(m => m.id === memberId);
+
+      if (!currentMember) return;
+
+      document.getElementById('targetMemberName').textContent = `正在紀錄：${currentMember.name}`;
+      document.getElementById('recordBtn').disabled = false;
+      document.getElementById('manualBtn').disabled = false;
+      
+      const hint = currentMember.type === 'Adult' 
+        ? '請口述：體重、體脂、肌肉量、內臟脂肪（例：「體重70.5 體脂20.1 肌肉52 內臟6」）' 
+        : '請口述：身高、體重（例：「身高115.5 體重20.5」）';
+      document.getElementById('recordHint').textContent = hint;
+
+      const isAdult = currentMember.type === 'Adult';
+      document.querySelectorAll('.adult-field').forEach(el => el.style.display = isAdult ? 'block' : 'none');
+      document.querySelectorAll('.child-field').forEach(el => el.style.display = isAdult ? 'none' : 'block');
+
+      document.getElementById('childChartToggle').style.display = currentMember.type === 'Child' ? 'inline-flex' : 'none';
+      document.getElementById('chartTitle').textContent = currentMember.type === 'Adult' ? '歷史趨勢圖' : '兒童生長曲線對照圖 (WHO)';
+
+      loadMemberData(currentMember.id);
+    }
+
+    async function submitNewMember() {
+      const name = document.getElementById('newMemberName').value.trim();
+      const type = document.getElementById('newMemberType').value;
+      const gender = document.getElementById('newMemberGender').value;
+      const height = document.getElementById('newMemberHeight').value;
+      const birthDate = document.getElementById('newMemberBirth').value;
+
+      if (!name) { alert('請輸入成員姓名'); return; }
+
+      await apiRequest('addMember', 'POST', { name, type, gender, birthDate, height });
+      
+      const modalEl = document.getElementById('addMemberModal');
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      modal.hide();
+      document.getElementById('newMemberName').value = '';
+      document.getElementById('newMemberHeight').value = '';
+      loadMembers();
+    }
+
+    async function submitManualRecord() {
+      if (!currentMember) return;
+
+      const isAdult = currentMember.type === 'Adult';
+      const parsedData = {
+        weight: isAdult 
+          ? (document.getElementById('mWeight').value ? parseFloat(document.getElementById('mWeight').value) : null)
+          : (document.getElementById('mChildWeight').value ? parseFloat(document.getElementById('mChildWeight').value) : null),
+        bodyFat: isAdult && document.getElementById('mBodyFat').value ? parseFloat(document.getElementById('mBodyFat').value) : null,
+        muscleMass: isAdult && document.getElementById('mMuscle').value ? parseFloat(document.getElementById('mMuscle').value) : null,
+        visceralFat: isAdult && document.getElementById('mVisceral').value ? parseInt(document.getElementById('mVisceral').value) : null,
+        height: !isAdult && document.getElementById('mHeight').value ? parseFloat(document.getElementById('mHeight').value) : null,
+        transcript: '手動輸入紀錄'
+      };
+
+      await apiRequest('saveRecord', 'POST', { memberId: currentMember.id, parsedData });
+
+      const modalEl = document.getElementById('manualInputModal');
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      modal.hide();
+      document.getElementById('manualForm').reset();
+      loadMemberData(currentMember.id);
+    }
+
+    async function toggleRecording() {
+      const btn = document.getElementById('recordBtn');
+      const status = document.getElementById('statusMessage');
+
+      if (!isRecording) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          
+          let options = {};
+          if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
+          } else if (MediaRecorder.isTypeSupported('audio/aac')) {
+            options = { mimeType: 'audio/aac' };
+          }
+
+          mediaRecorder = new MediaRecorder(stream, options);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+          mediaRecorder.onstop = uploadAudio;
+
+          mediaRecorder.start();
+          isRecording = true;
+          btn.classList.add('recording');
+          btn.innerHTML = '⏹️<br>停止錄音';
+          status.textContent = '錄音中...請清晰口述數據';
+        } catch (err) {
+          alert('無法開啟麥克風：' + err.message);
+        }
+      } else {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        isRecording = false;
+        btn.classList.remove('recording');
+        btn.innerHTML = '🎤<br>開始錄音';
+        btn.disabled = true;
+        status.textContent = '語音辨識與分析中，請稍候...';
+      }
+    }
+
+    function uploadAudio() {
+      const mimeType = mediaRecorder.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      const reader = new FileReader();
+
+      reader.onloadend = async function() {
+        const base64Audio = reader.result.split(',')[1];
+        try {
+          await apiRequest('processAudio', 'POST', { base64Audio, mimeType, memberId: currentMember.id });
+          document.getElementById('statusMessage').textContent = '✅ 紀錄成功！';
+          document.getElementById('recordBtn').disabled = false;
+          loadMemberData(currentMember.id);
+          setTimeout(() => { document.getElementById('statusMessage').textContent = ''; }, 3000);
+        } catch (err) {
+          alert('語音解析失敗：' + err.message);
+          document.getElementById('statusMessage').textContent = '';
+          document.getElementById('recordBtn').disabled = false;
+        }
+      };
+
+      reader.readAsDataURL(audioBlob);
+    }
+
+    async function loadMemberData(memberId) {
+      currentRecords = await apiRequest('getMemberRecords', 'GET', { memberId });
+      renderMetrics(currentRecords);
+      renderTable(currentRecords);
+      renderChart(currentRecords);
+    }
+
+    function switchChildMetric(metric) {
+      activeChildMetric = metric;
+      document.getElementById('btnHeight').classList.toggle('active', metric === 'height');
+      document.getElementById('btnWeight').classList.toggle('active', metric === 'weight');
+      renderChart(currentRecords);
+    }
+
+    function renderMetrics(records) {
+      const container = document.getElementById('metricsContainer');
+      container.innerHTML = '';
+
+      if (records.length === 0) {
+        container.innerHTML = '<div class="col text-center text-muted">尚無歷史紀錄</div>';
+        return;
+      }
+
+      const latest = records[records.length - 1];
+
+      if (currentMember.type === 'Adult') {
+        const gender = currentMember.gender || 'Boy';
+        const heightCm = latest.height || currentMember.height;
+
+        let bmiDisplay = '-';
+        if (latest.weight && heightCm) {
+          const hM = heightCm / 100;
+          const bmi = (latest.weight / (hM * hM)).toFixed(1);
+          let bmiStatusClass = 'bg-success';
+          let bmiStatusText = '正常';
+
+          if (bmi < 18.5) { bmiStatusClass = 'bg-warning text-dark'; bmiStatusText = '過輕'; }
+          else if (bmi >= 24 && bmi < 27) { bmiStatusClass = 'bg-warning text-dark'; bmiStatusText = '過重'; }
+          else if (bmi >= 27) { bmiStatusClass = 'bg-danger'; bmiStatusText = '肥胖'; }
+
+          bmiDisplay = `${bmi} <span class="badge ${bmiStatusClass} badge-status">${bmiStatusText}</span>`;
+        }
+
+        const fatRef = gender === 'Boy' ? '建議: 10-20%' : '建議: 18-28%';
+        
+        container.innerHTML = `
+          <div class="col-6 col-md">
+            <div class="metric-box">
+              <div class="metric-value">${bmiDisplay}</div>
+              <div class="metric-label">BMI <span class="d-block text-muted small">建議: 18.5-23.9</span></div>
+            </div>
+          </div>
+          <div class="col-6 col-md">
+            <div class="metric-box">
+              <div class="metric-value">${latest.weight ?? '-'} <small class="fs-6">kg</small></div>
+              <div class="metric-label">體重</div>
+            </div>
+          </div>
+          <div class="col-6 col-md">
+            <div class="metric-box">
+              <div class="metric-value">${latest.bodyFat ?? '-'} <small class="fs-6">%</small></div>
+              <div class="metric-label">體脂率 <span class="d-block text-muted small">${fatRef}</span></div>
+            </div>
+          </div>
+          <div class="col-6 col-md">
+            <div class="metric-box">
+              <div class="metric-value">${latest.muscleMass ?? '-'} <small class="fs-6">kg</small></div>
+              <div class="metric-label">肌肉量</div>
+            </div>
+          </div>
+          <div class="col-12 col-md">
+            <div class="metric-box">
+              <div class="metric-value">${latest.visceralFat ?? '-'}</div>
+              <div class="metric-label">內臟脂肪 <span class="d-block text-muted small">建議: 1-9</span></div>
+            </div>
+          </div>
+        `;
+      } else {
+        let bmi = '-';
+        if (latest.height && latest.weight) {
+          const hM = latest.height / 100;
+          bmi = (latest.weight / (hM * hM)).toFixed(1);
+        }
+        container.innerHTML = `
+          <div class="col-4"><div class="metric-box"><div class="metric-value">${latest.height ?? '-'} <small class="fs-6">cm</small></div><div class="metric-label">最新身高</div></div></div>
+          <div class="col-4"><div class="metric-box"><div class="metric-value">${latest.weight ?? '-'} <small class="fs-6">kg</small></div><div class="metric-label">最新體重</div></div></div>
+          <div class="col-4"><div class="metric-box"><div class="metric-value">${bmi}</div><div class="metric-label">BMI 參考</div></div></div>
+        `;
+      }
+    }
+
+    function renderTable(records) {
+      const header = document.getElementById('tableHeader');
+      const body = document.getElementById('tableBody');
+
+      if (currentMember.type === 'Adult') {
+        header.innerHTML = `<tr><th>日期</th><th>體重 (kg)</th><th>體脂率 (%)</th><th>肌肉量 (kg)</th><th>內臟脂肪</th><th>紀錄來源</th></tr>`;
+      } else {
+        header.innerHTML = `<tr><th>日期</th><th>身高 (cm)</th><th>體重 (kg)</th><th>紀錄來源</th></tr>`;
+      }
+
+      body.innerHTML = '';
+      const reversed = [...records].reverse();
+
+      reversed.forEach(r => {
+        const tr = document.createElement('tr');
+        if (currentMember.type === 'Adult') {
+          tr.innerHTML = `
+            <td>${r.date}</td>
+            <td>${r.weight ?? '-'}</td>
+            <td>${r.bodyFat ?? '-'}</td>
+            <td>${r.muscleMass ?? '-'}</td>
+            <td>${r.visceralFat ?? '-'}</td>
+            <td><small class="text-muted">${r.transcript || ''}</small></td>
+          `;
+        } else {
+          tr.innerHTML = `
+            <td>${r.date}</td>
+            <td>${r.height ?? '-'}</td>
+            <td>${r.weight ?? '-'}</td>
+            <td><small class="text-muted">${r.transcript || ''}</small></td>
+          `;
+        }
+        body.appendChild(tr);
+      });
+    }
+
+    function renderChart(records) {
+      const ctx = document.getElementById('trendChart').getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+
+      const labels = records.map(r => r.date.split(' ')[0]);
+
+      if (currentMember.type === 'Adult') {
+        chartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              { label: '體重 (kg)', data: records.map(r => r.weight), borderColor: '#0d6efd', backgroundColor: '#0d6efd', yAxisID: 'y' },
+              { label: '肌肉量 (kg)', data: records.map(r => r.muscleMass), borderColor: '#198754', backgroundColor: '#198754', yAxisID: 'y' },
+              { label: '體脂率 (%)', data: records.map(r => r.bodyFat), borderColor: '#dc3545', backgroundColor: '#dc3545', yAxisID: 'y1' }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '重量 (kg)' } },
+              y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '體脂 (%)' } }
+            }
+          }
+        });
+      } else {
+        const birth = currentMember.birthDate ? new Date(currentMember.birthDate) : null;
+        const p97Data = [];
+        const p50Data = [];
+        const p3Data = [];
+        const actualData = [];
+
+        records.forEach(r => {
+          const recDate = new Date(r.date);
+          let ageYears = 5;
+          if (birth) {
+            ageYears = (recDate - birth) / (1000 * 60 * 60 * 24 * 365.25);
+            if (ageYears < 0) ageYears = 0;
+          }
+
+          const curve = getWHOCurve(currentMember.gender, ageYears, activeChildMetric);
+          p97Data.push(curve.p97);
+          p50Data.push(curve.p50);
+          p3Data.push(curve.p3);
+          actualData.push(activeChildMetric === 'height' ? r.height : r.weight);
+        });
+
+        const metricLabel = activeChildMetric === 'height' ? '身高 (cm)' : '體重 (kg)';
+
+        chartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              { label: `孩子實際 ${metricLabel}`, data: actualData, borderColor: '#0d6efd', backgroundColor: '#0d6efd', borderWidth: 3, pointRadius: 6 },
+              { label: 'P97 (頂端線)', data: p97Data, borderColor: 'rgba(220, 53, 69, 0.5)', borderDash: [5, 5], pointRadius: 0 },
+              { label: 'P50 (中位線)', data: p50Data, borderColor: 'rgba(25, 135, 84, 0.6)', borderDash: [5, 5], pointRadius: 0 },
+              { label: 'P3 (底端線)', data: p3Data, borderColor: 'rgba(255, 193, 7, 0.8)', borderDash: [5, 5], pointRadius: 0 }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { title: { display: true, text: metricLabel } } }
+          }
+        });
+      }
+    }
+  </script>
+</body>
+</html>
