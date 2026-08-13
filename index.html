@@ -3,166 +3,140 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>家庭健康與生長曲線紀錄系統</title>
+  <title>家庭健康與生長紀錄</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { background-color: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    .card { border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; border: none; }
-    .record-btn { width: 90px; height: 90px; border-radius: 50%; font-weight: bold; font-size: 1rem; }
+    body { background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .card { border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; border: none; }
+    .member-card {
+      cursor: pointer;
+      transition: all 0.2s ease-in-out;
+      border-radius: 16px;
+      background: #ffffff;
+      border: 2px solid #e9ecef;
+    }
+    .member-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 20px rgba(13, 110, 253, 0.15);
+      border-color: #0d6efd;
+    }
+    .record-btn { width: 100px; height: 100px; border-radius: 50%; font-weight: bold; font-size: 1.1rem; }
     .recording { animation: pulse 1.5s infinite; background-color: #dc3545 !important; border-color: #dc3545 !important; }
     @keyframes pulse {
       0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
       70% { transform: scale(1.05); box-shadow: 0 0 0 15px rgba(220, 53, 69, 0); }
       100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
     }
-    .metric-box { text-align: center; padding: 12px; border-radius: 8px; background-color: #eef2f7; height: 100%; }
+    .metric-box { text-align: center; padding: 12px; border-radius: 10px; background-color: #eef2f7; height: 100%; }
     .metric-value { font-size: 1.4rem; font-weight: bold; color: #2c3e50; }
     .metric-label { font-size: 0.85rem; color: #6c757d; }
     
-    /* 載入遮照動畫 */
     #loadingOverlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(255, 255, 255, 0.85); z-index: 9999;
+      background: rgba(255, 255, 255, 0.9); z-index: 9999;
       display: flex; flex-direction: column; justify-content: center; align-items: center;
     }
   </style>
 </head>
 <body>
-  <!-- 全頁載入中遮照 -->
+
+  <!-- 載入中遮照 -->
   <div id="loadingOverlay">
-    <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
-    <div class="mt-3 text-secondary fw-bold" id="loadingText">系統資料載入中，請稍候...</div>
+    <div class="spinner-border text-primary" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+    <div class="mt-3 text-secondary fw-bold fs-5" id="loadingText">系統載入中，請稍候...</div>
   </div>
 
   <div class="container py-4" style="max-width: 900px;">
-    <!-- 頂部與成員選擇 -->
-    <div class="row align-items-center mb-4">
-      <div class="col-md-6">
-        <h3 class="fw-bold text-primary mb-0">🎙️ 家庭健康與生長紀錄</h3>
+
+    <!-- 1️⃣ 首頁：四個成員選擇方塊 -->
+    <div id="landingView" style="display: none;">
+      <div class="text-center my-4">
+        <h2 class="fw-bold text-primary mb-2">🏡 家庭健康紀錄系統</h2>
+        <p class="text-muted">請選擇要查看或記錄數據的成員</p>
       </div>
-      <div class="col-md-6 d-flex justify-content-md-end mt-3 mt-md-0">
-        <select id="memberSelect" class="form-select me-2" style="max-width: 220px;" onchange="onMemberSelectChange()">
-          <option value="">載入成員中...</option>
+
+      <div class="row g-3 my-3" id="memberGrid">
+        <!-- JS 動態生成 4 個成員卡片 -->
+      </div>
+
+      <div class="text-center mt-4">
+        <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addMemberModal">+ 新增成員</button>
+      </div>
+    </div>
+
+    <!-- 2️⃣ 成員內頁儀表板 -->
+    <div id="dashboardView" style="display: none;">
+      <!-- 頂部列：返回與切換成員 -->
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <button class="btn btn-outline-primary fw-bold" onclick="showLandingView()">⬅️ 返回成員列表</button>
+        <select id="memberSelect" class="form-select" style="max-width: 200px;" onchange="onMemberSelectChange()">
         </select>
-        <button class="btn btn-outline-primary text-nowrap" data-bs-toggle="modal" data-bs-target="#addMemberModal">+ 新增成員</button>
-      </div>
-    </div>
-
-    <!-- 輸入區塊 -->
-    <div class="card p-4">
-      <h5 id="targetMemberName" class="text-secondary fw-bold mb-3">請選擇成員</h5>
-      
-      <!-- 快捷文字單行輸入框 -->
-      <div class="mb-4">
-        <label class="form-label fw-bold">⌨️ 快捷單行輸入：</label>
-        <div class="input-group">
-          <input type="text" id="quickInputText" class="form-control" placeholder="請選擇成員...">
-          <button class="btn btn-primary" id="btnQuickSubmit" onclick="submitQuickInput()" disabled>直接寫入</button>
-        </div>
-        <div id="quickInputHint" class="form-text text-muted"></div>
       </div>
 
-      <hr class="my-3">
-
-      <!-- 語音輸入區塊 -->
-      <div class="text-center">
-        <label class="form-label fw-bold d-block">🎤 語音輸入（辨識後可預覽）：</label>
-        <button id="recordBtn" class="btn btn-danger record-btn shadow my-2" onclick="toggleRecording()" disabled>
-          🎤<br>開始錄音
-        </button>
-        <div id="statusMessage" class="text-info fw-bold mt-2"></div>
-      </div>
-    </div>
-
-    <!-- 最新數據指標面板 -->
-    <div class="card p-3">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="fw-bold text-secondary mb-0">最新量測紀錄</h5>
-        <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#refModal">ℹ️ 標準參考值</button>
-      </div>
-      <div id="metricsContainer" class="row g-2">
-        <div class="col text-center text-muted">尚無紀錄</div>
-      </div>
-    </div>
-
-    <!-- 歷史圖表 -->
-    <div class="card p-3">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="fw-bold text-secondary mb-0" id="chartTitle">歷史趨勢圖</h5>
-        <div id="childChartToggle" class="btn-group btn-group-sm" style="display:none;">
-          <button class="btn btn-outline-primary active" id="btnHeight" onclick="switchChildMetric('height')">身高生長曲線 (cm)</button>
-          <button class="btn btn-outline-primary" id="btnWeight" onclick="switchChildMetric('weight')">體重生長曲線 (kg)</button>
-        </div>
-      </div>
-      <div style="position: relative; height: 320px;">
-        <canvas id="trendChart"></canvas>
-      </div>
-    </div>
-
-    <!-- 歷史紀錄表格 -->
-    <div class="card p-3">
-      <h5 class="fw-bold text-secondary mb-3">歷史紀錄表格</h5>
-      <div class="table-responsive">
-        <table class="table table-hover align-middle">
-          <thead id="tableHeader" class="table-light"></thead>
-          <tbody id="tableBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- 語音解析結果二次確認 Modal -->
-  <div class="modal fade" id="confirmVoiceModal" data-bs-backdrop="static" tabindex="-1">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header bg-light">
-          <h5 class="modal-title fw-bold">🎙️ 語音辨識結果確認</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label text-muted small">語音辨識原文字：</label>
-            <div id="voiceTranscript" class="p-2 bg-light border rounded text-dark"></div>
+      <!-- 輸入區塊 -->
+      <div class="card p-4">
+        <h4 id="targetMemberName" class="text-primary fw-bold mb-3">成員數據輸入</h4>
+        
+        <!-- 快捷單行輸入 -->
+        <div class="mb-4">
+          <label class="form-label fw-bold">⌨️ 快捷單行輸入：</label>
+          <div class="input-group">
+            <input type="text" id="quickInputText" class="form-control" placeholder="載入中...">
+            <button class="btn btn-primary px-4" id="btnQuickSubmit" onclick="submitQuickInput()">寫入</button>
           </div>
-          <h6 class="fw-bold text-primary mb-3">解析出之數據（可直接修改）：</h6>
-          <form id="confirmForm">
-            <div class="row g-2 adult-confirm">
-              <div class="col-6 mb-2">
-                <label class="form-label small">體重 (kg)</label>
-                <input type="number" step="0.1" id="vWeight" class="form-control">
-              </div>
-              <div class="col-6 mb-2">
-                <label class="form-label small">體脂率 (%)</label>
-                <input type="number" step="0.1" id="vBodyFat" class="form-control">
-              </div>
-              <div class="col-6 mb-2">
-                <label class="form-label small">肌肉量 (kg)</label>
-                <input type="number" step="0.1" id="vMuscle" class="form-control">
-              </div>
-              <div class="col-6 mb-2">
-                <label class="form-label small">內臟脂肪</label>
-                <input type="number" step="1" id="vVisceral" class="form-control">
-              </div>
-            </div>
-            <div class="row g-2 child-confirm" style="display:none;">
-              <div class="col-6 mb-2">
-                <label class="form-label small">身高 (cm)</label>
-                <input type="number" step="0.1" id="vHeight" class="form-control">
-              </div>
-              <div class="col-6 mb-2">
-                <label class="form-label small">體重 (kg)</label>
-                <input type="number" step="0.1" id="vChildWeight" class="form-control">
-              </div>
-            </div>
-          </form>
+          <div id="quickInputHint" class="form-text text-muted mt-2"></div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" onclick="reRecordVoice()">🔄 重新錄音</button>
-          <button type="button" class="btn btn-success" onclick="saveVoiceRecord()">✅ 確定存入 Google Sheet</button>
+
+        <hr class="my-3">
+
+        <!-- 語音直接輸入 -->
+        <div class="text-center">
+          <label class="form-label fw-bold d-block">🎤 語音直接輸入（辨識後自動存入）：</label>
+          <button id="recordBtn" class="btn btn-danger record-btn shadow my-2" onclick="toggleRecording()">
+            🎤<br>開始錄音
+          </button>
+          <div id="statusMessage" class="text-info fw-bold mt-2"></div>
+        </div>
+      </div>
+
+      <!-- 最新量測數據 -->
+      <div class="card p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="fw-bold text-secondary mb-0">最新量測紀錄</h5>
+          <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#refModal">ℹ️ 標準參考值</button>
+        </div>
+        <div id="metricsContainer" class="row g-2">
+          <div class="col text-center text-muted">尚無紀錄</div>
+        </div>
+      </div>
+
+      <!-- 趨勢圖表 -->
+      <div class="card p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="fw-bold text-secondary mb-0" id="chartTitle">歷史趨勢圖</h5>
+          <div id="childChartToggle" class="btn-group btn-group-sm" style="display:none;">
+            <button class="btn btn-outline-primary active" id="btnHeight" onclick="switchChildMetric('height')">身高生長曲線 (cm)</button>
+            <button class="btn btn-outline-primary" id="btnWeight" onclick="switchChildMetric('weight')">體重生長曲線 (kg)</button>
+          </div>
+        </div>
+        <div style="position: relative; height: 320px;">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+
+      <!-- 歷史紀錄表格 -->
+      <div class="card p-3">
+        <h5 class="fw-bold text-secondary mb-3">歷史紀錄表格</h5>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead id="tableHeader" class="table-light"></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
         </div>
       </div>
     </div>
+
   </div>
 
   <!-- 新增成員 Modal -->
@@ -211,7 +185,7 @@
     </div>
   </div>
 
-  <!-- 標準對照 Modal -->
+  <!-- 標準參考值 Modal -->
   <div class="modal fade" id="refModal" tabindex="-1">
     <div class="modal-dialog">
       <div class="modal-content">
@@ -245,18 +219,18 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    // ⚠️ 請填入您的 Google Apps Script Web App 最新部署網址
+    // ⚠️ 請替換為您的 Google Apps Script Web App 最新部署網址
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwJjlTNi412Yn7ygIsFiYA2jHi8p665i64s5ApVQXitcrAEZ6bFk8C99PeRku321IVC/exec";
 
-    let membersList = [];
+    let globalMembers = [];
+    let globalRecords = [];
     let currentMember = null;
-    let currentRecords = [];
+    
     let mediaRecorder = null;
     let audioChunks = [];
     let isRecording = false;
     let chartInstance = null;
     let activeChildMetric = 'height';
-    let currentParsedVoiceData = null;
 
     function showLoading(msg = '資料載入中...') {
       document.getElementById('loadingText').textContent = msg;
@@ -290,64 +264,19 @@
       }
     }
 
-    function getWHOCurve(gender, ageYears, metric) {
-      let baseP50, p3Offset, p97Offset;
-      const gFactor = gender === 'Boy' ? 1.0 : 0.96;
-
-      if (metric === 'height') {
-        baseP50 = (78 + ageYears * 6.2) * gFactor;
-        p3Offset = baseP50 * 0.05;
-        p97Offset = baseP50 * 0.05;
-      } else {
-        baseP50 = (10 + ageYears * 2.3) * gFactor;
-        p3Offset = baseP50 * 0.15;
-        p97Offset = baseP50 * 0.20;
-      }
-
-      return {
-        p3: (baseP50 - p3Offset).toFixed(1),
-        p50: baseP50.toFixed(1),
-        p97: (baseP50 + p97Offset).toFixed(1)
-      };
-    }
-
     window.onload = function() {
       initApp();
     };
 
-    // 🚀 單次請求初始化：大幅減少載入等待時間
+    // 🚀 初始化：一次下載全家資料，之後切換 0 延遲
     async function initApp() {
-      showLoading('喚醒雲端資料庫中...');
+      showLoading('一次性載入全家數據中...');
       try {
         const initData = await apiRequest('getInitialData');
-        membersList = initData.members || [];
-        
-        const select = document.getElementById('memberSelect');
-        select.innerHTML = '';
+        globalMembers = initData.members || [];
+        globalRecords = initData.allRecords || [];
 
-        if (membersList.length === 0) {
-          select.innerHTML = '<option value="">請先新增成員</option>';
-          document.getElementById('recordBtn').disabled = true;
-          document.getElementById('btnQuickSubmit').disabled = true;
-          hideLoading();
-          return;
-        }
-
-        membersList.forEach((m) => {
-          const opt = document.createElement('option');
-          opt.value = m.id;
-          opt.textContent = `${m.name} (${m.type === 'Adult' ? '成人' : '小孩'})`;
-          select.appendChild(opt);
-        });
-
-        if (initData.selectedId) {
-          select.value = initData.selectedId;
-        }
-
-        currentMember = membersList.find(m => m.id === select.value);
-        currentRecords = initData.records || [];
-
-        renderMemberUI();
+        renderLandingView();
       } catch (err) {
         console.error(err);
       } finally {
@@ -355,44 +284,88 @@
       }
     }
 
-    async function onMemberSelectChange() {
+    // 渲染首頁 4 位成員方塊
+    function renderLandingView() {
+      document.getElementById('dashboardView').style.display = 'none';
+      document.getElementById('landingView').style.display = 'block';
+
+      const grid = document.getElementById('memberGrid');
+      grid.innerHTML = '';
+
+      if (globalMembers.length === 0) {
+        grid.innerHTML = '<div class="text-center text-muted col-12">請點擊下方「新增成員」按鈕建立成員</div>';
+        return;
+      }
+
+      globalMembers.forEach(m => {
+        const col = document.createElement('div');
+        col.className = 'col-6 col-md-3';
+        col.innerHTML = `
+          <div class="member-card p-4 text-center" onclick="selectMember('${m.id}')">
+            <div class="fs-1 mb-2">${m.type === 'Adult' ? '👤' : '👶'}</div>
+            <h4 class="fw-bold text-dark mb-1">${m.name}</h4>
+            <span class="badge ${m.type === 'Adult' ? 'bg-primary' : 'bg-success'}">${m.type === 'Adult' ? '成人' : '小孩'}</span>
+          </div>
+        `;
+        grid.appendChild(col);
+      });
+
+      // 同步更新下拉選單
       const select = document.getElementById('memberSelect');
-      const memberId = select.value;
-      currentMember = membersList.find(m => m.id === memberId);
+      select.innerHTML = '';
+      globalMembers.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name;
+        select.appendChild(opt);
+      });
+    }
+
+    function showLandingView() {
+      renderLandingView();
+    }
+
+    // 點擊卡片切換至成員內頁 (0 秒開)
+    function selectMember(memberId) {
+      currentMember = globalMembers.find(m => m.id === memberId);
       if (!currentMember) return;
 
-      showLoading('切換成員資料中...');
-      try {
-        currentRecords = await apiRequest('getMemberRecords', 'GET', { memberId });
-        renderMemberUI();
-      } finally {
-        hideLoading();
-      }
+      document.getElementById('memberSelect').value = memberId;
+      document.getElementById('landingView').style.display = 'none';
+      document.getElementById('dashboardView').style.display = 'block';
+
+      renderMemberUI();
+    }
+
+    function onMemberSelectChange() {
+      const selectVal = document.getElementById('memberSelect').value;
+      selectMember(selectVal);
     }
 
     function renderMemberUI() {
       document.getElementById('targetMemberName').textContent = `當前對象：${currentMember.name}`;
-      document.getElementById('recordBtn').disabled = false;
-      document.getElementById('btnQuickSubmit').disabled = false;
       
       const isAdult = currentMember.type === 'Adult';
       const inputEl = document.getElementById('quickInputText');
       const hintEl = document.getElementById('quickInputHint');
 
       if (isAdult) {
-        inputEl.placeholder = '例：705 201 523 6';
-        hintEl.innerHTML = '請依序輸入：<b>體重 體脂 肌肉量 內臟脂肪</b>（以空格分隔，不需小數點，例如 <code>705 201 523 6</code>）';
+        inputEl.placeholder = '例：705 201 523 55';
+        hintEl.innerHTML = '請依序輸入：<b>體重 體脂 肌肉量 內臟脂肪</b>（以空格分隔，如 <code>70.5 20.1 52.3 5.5</code> 或不帶小數點 <code>705 201 523 55</code>）';
       } else {
         inputEl.placeholder = '例：1155 205';
-        hintEl.innerHTML = '請依序輸入：<b>身高 體重</b>（以空格分隔，不需小數點，例如 <code>1155 205</code>）';
+        hintEl.innerHTML = '請依序輸入：<b>身高 體重</b>（以空格分隔，如 <code>115.5 20.5</code> 或 <code>1155 205</code>）';
       }
 
       document.getElementById('childChartToggle').style.display = isAdult ? 'none' : 'inline-flex';
       document.getElementById('chartTitle').textContent = isAdult ? '歷史趨勢圖' : '兒童生長曲線對照圖 (WHO)';
 
-      renderMetrics(currentRecords);
-      renderTable(currentRecords);
-      renderChart(currentRecords);
+      // 篩選出目前成員的紀錄
+      const memberRecords = globalRecords.filter(r => r.memberId === currentMember.id);
+
+      renderMetrics(memberRecords);
+      renderTable(memberRecords);
+      renderChart(memberRecords);
     }
 
     async function submitQuickInput() {
@@ -403,12 +376,12 @@
       const tokens = text.split(/\s+/);
       const isAdult = currentMember.type === 'Adult';
 
-      const parseVal = (str, isInteger = false) => {
+      const parseVal = (str) => {
         if (!str) return null;
         if (str.includes('.')) return parseFloat(str);
         const val = parseFloat(str);
         if (isNaN(val)) return null;
-        return isInteger ? parseInt(str, 10) : val / 10;
+        return val > 150 ? val / 10 : val; // 自動判斷是否為無小數點輸入
       };
 
       let parsedData = {};
@@ -418,9 +391,9 @@
           weight: parseVal(tokens[0]),
           bodyFat: parseVal(tokens[1]),
           muscleMass: parseVal(tokens[2]),
-          visceralFat: parseVal(tokens[3], true),
+          visceralFat: parseVal(tokens[3]), // ✅ 支援小數點
           height: null,
-          transcript: `快速單行輸入: ${text}`
+          transcript: `快捷單行輸入: ${text}`
         };
       } else {
         if (tokens.length < 2) { alert('小孩格式請依序輸入 2 個數字：身高 體重'); return; }
@@ -428,39 +401,18 @@
           height: parseVal(tokens[0]),
           weight: parseVal(tokens[1]),
           bodyFat: null, muscleMass: null, visceralFat: null,
-          transcript: `快速單行輸入: ${text}`
+          transcript: `快捷單行輸入: ${text}`
         };
       }
 
-      showLoading('儲存數據中...');
+      showLoading('寫入資料中...');
       try {
-        await apiRequest('saveRecord', 'POST', { memberId: currentMember.id, parsedData });
+        const newRecord = await apiRequest('saveRecord', 'POST', { memberId: currentMember.id, parsedData });
         document.getElementById('quickInputText').value = '';
-        currentRecords = await apiRequest('getMemberRecords', 'GET', { memberId: currentMember.id });
+        
+        // 更新本地端資料，瞬間更新畫面
+        globalRecords.push(newRecord);
         renderMemberUI();
-      } finally {
-        hideLoading();
-      }
-    }
-
-    async function submitNewMember() {
-      const name = document.getElementById('newMemberName').value.trim();
-      const type = document.getElementById('newMemberType').value;
-      const gender = document.getElementById('newMemberGender').value;
-      const height = document.getElementById('newMemberHeight').value;
-      const birthDate = document.getElementById('newMemberBirth').value;
-
-      if (!name) { alert('請輸入成員姓名'); return; }
-
-      showLoading('新增成員中...');
-      try {
-        await apiRequest('addMember', 'POST', { name, type, gender, birthDate, height });
-        const modalEl = document.getElementById('addMemberModal');
-        const modal = bootstrap.Modal.getInstance(modalEl);
-        if (modal) modal.hide();
-        document.getElementById('newMemberName').value = '';
-        document.getElementById('newMemberHeight').value = '';
-        await initApp();
       } finally {
         hideLoading();
       }
@@ -481,7 +433,7 @@
           audioChunks = [];
 
           mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-          mediaRecorder.onstop = uploadAndAnalyzeAudio;
+          mediaRecorder.onstop = uploadAnalyzeAndSaveAudio;
 
           mediaRecorder.start();
           isRecording = true;
@@ -497,27 +449,37 @@
         isRecording = false;
         btn.classList.remove('recording');
         btn.innerHTML = '🎤<br>開始錄音';
-        btn.disabled = true;
-        status.textContent = '語音辨識中，請稍候...';
+        status.textContent = '語音辨識與自動寫入中，請稍候...';
       }
     }
 
-    function uploadAndAnalyzeAudio() {
+    // 🚀 錄音後：AI 解析 -> 取消彈窗 -> 直接自動寫入資料庫
+    function uploadAnalyzeAndSaveAudio() {
       const mimeType = mediaRecorder.mimeType || 'audio/webm';
       const audioBlob = new Blob(audioChunks, { type: mimeType });
       const reader = new FileReader();
 
       reader.onloadend = async function() {
         const base64Audio = reader.result.split(',')[1];
-        showLoading('AI 辨識語音中...');
+        showLoading('AI 辨識語音並自動寫入中...');
         try {
+          // 1. 呼叫 AI 解析
           const parsedResult = await apiRequest('analyzeAudio', 'POST', { base64Audio, mimeType, memberId: currentMember.id });
-          document.getElementById('statusMessage').textContent = '';
-          document.getElementById('recordBtn').disabled = false;
-          showVoiceConfirmModal(parsedResult);
+          
+          // 2. 直接自動儲存
+          const newRecord = await apiRequest('saveRecord', 'POST', { 
+            memberId: currentMember.id, 
+            parsedData: parsedResult 
+          });
+
+          document.getElementById('statusMessage').textContent = '✅ 錄音辨識成功並已自動寫入！';
+          setTimeout(() => { document.getElementById('statusMessage').textContent = ''; }, 3000);
+
+          // 3. 更新前端記憶體資料並重繪畫面
+          globalRecords.push(newRecord);
+          renderMemberUI();
         } catch (err) {
           document.getElementById('statusMessage').textContent = '';
-          document.getElementById('recordBtn').disabled = false;
         } finally {
           hideLoading();
         }
@@ -526,69 +488,11 @@
       reader.readAsDataURL(audioBlob);
     }
 
-    function showVoiceConfirmModal(data) {
-      currentParsedVoiceData = data;
-      const isAdult = currentMember.type === 'Adult';
-
-      document.getElementById('voiceTranscript').textContent = data.transcript || '（無辨識文字）';
-      document.querySelectorAll('.adult-confirm').forEach(el => el.style.display = isAdult ? 'flex' : 'none');
-      document.querySelectorAll('.child-confirm').forEach(el => el.style.display = isAdult ? 'none' : 'flex');
-
-      if (isAdult) {
-        document.getElementById('vWeight').value = data.weight ?? '';
-        document.getElementById('vBodyFat').value = data.bodyFat ?? '';
-        document.getElementById('vMuscle').value = data.muscleMass ?? '';
-        document.getElementById('vVisceral').value = data.visceralFat ?? '';
-      } else {
-        document.getElementById('vHeight').value = data.height ?? '';
-        document.getElementById('vChildWeight').value = data.weight ?? '';
-      }
-
-      const modal = new bootstrap.Modal(document.getElementById('confirmVoiceModal'));
-      modal.show();
-    }
-
-    function reRecordVoice() {
-      const modalEl = document.getElementById('confirmVoiceModal');
-      const modal = bootstrap.Modal.getInstance(modalEl);
-      modal.hide();
-      toggleRecording();
-    }
-
-    async function saveVoiceRecord() {
-      if (!currentMember) return;
-      const isAdult = currentMember.type === 'Adult';
-
-      const parsedData = {
-        weight: isAdult 
-          ? (document.getElementById('vWeight').value ? parseFloat(document.getElementById('vWeight').value) : null)
-          : (document.getElementById('vChildWeight').value ? parseFloat(document.getElementById('vChildWeight').value) : null),
-        bodyFat: isAdult && document.getElementById('vBodyFat').value ? parseFloat(document.getElementById('vBodyFat').value) : null,
-        muscleMass: isAdult && document.getElementById('vMuscle').value ? parseFloat(document.getElementById('vMuscle').value) : null,
-        visceralFat: isAdult && document.getElementById('vVisceral').value ? parseInt(document.getElementById('vVisceral').value) : null,
-        height: !isAdult && document.getElementById('vHeight').value ? parseFloat(document.getElementById('vHeight').value) : null,
-        transcript: `語音錄製: ${currentParsedVoiceData?.transcript || ''}`
-      };
-
-      showLoading('寫入試算表中...');
-      try {
-        await apiRequest('saveRecord', 'POST', { memberId: currentMember.id, parsedData });
-        const modalEl = document.getElementById('confirmVoiceModal');
-        const modal = bootstrap.Modal.getInstance(modalEl);
-        modal.hide();
-
-        currentRecords = await apiRequest('getMemberRecords', 'GET', { memberId: currentMember.id });
-        renderMemberUI();
-      } finally {
-        hideLoading();
-      }
-    }
-
     function switchChildMetric(metric) {
       activeChildMetric = metric;
       document.getElementById('btnHeight').classList.toggle('active', metric === 'height');
       document.getElementById('btnWeight').classList.toggle('active', metric === 'weight');
-      renderChart(currentRecords);
+      renderMemberUI();
     }
 
     function renderMetrics(records) {
@@ -596,7 +500,7 @@
       container.innerHTML = '';
 
       if (records.length === 0) {
-        container.innerHTML = '<div class="col text-center text-muted">尚無歷史紀錄</div>';
+        container.innerHTML = '<div class="col text-center text-muted py-3">尚無歷史紀錄</div>';
         return;
       }
 
@@ -704,6 +608,27 @@
       });
     }
 
+    function getWHOCurve(gender, ageYears, metric) {
+      let baseP50, p3Offset, p97Offset;
+      const gFactor = gender === 'Boy' ? 1.0 : 0.96;
+
+      if (metric === 'height') {
+        baseP50 = (78 + ageYears * 6.2) * gFactor;
+        p3Offset = baseP50 * 0.05;
+        p97Offset = baseP50 * 0.05;
+      } else {
+        baseP50 = (10 + ageYears * 2.3) * gFactor;
+        p3Offset = baseP50 * 0.15;
+        p97Offset = baseP50 * 0.20;
+      }
+
+      return {
+        p3: (baseP50 - p3Offset).toFixed(1),
+        p50: baseP50.toFixed(1),
+        p97: (baseP50 + p97Offset).toFixed(1)
+      };
+    }
+
     function renderChart(records) {
       const ctx = document.getElementById('trendChart').getContext('2d');
       if (chartInstance) chartInstance.destroy();
@@ -772,6 +697,34 @@
           }
         });
       }
+    }
+
+    async function submitNewMember() {
+      const name = document.getElementById('newMemberName').value.trim();
+      const type = document.getElementById('newMemberType').value;
+      const gender = document.getElementById('newMemberGender').value;
+      const height = document.getElementById('newMemberHeight').value;
+      const birthDate = document.getElementById('newMemberBirth').value;
+
+      if (!name) { alert('請輸入成員姓名'); return; }
+
+      showLoading('新增成員中...');
+      try {
+        await apiRequest('addMember', 'POST', { name, type, gender, birthDate, height });
+        const modalEl = document.getElementById('addMemberModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+        
+        // 重新初始化載入
+        await initApp();
+      } finally {
+        hideLoading();
+      }
+    }
+
+    function toggleFieldsByMemberType() {
+      const type = document.getElementById('newMemberType').value;
+      document.getElementById('childFields').style.display = type === 'Child' ? 'block' : 'none';
     }
   </script>
 </body>
