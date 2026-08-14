@@ -6,6 +6,7 @@
   <title>家庭健康與生長紀錄</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
   <style>
     body { background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     .card { border-radius: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; border: none; }
@@ -658,7 +659,7 @@
       };
     }
 
-    function renderChart(records) {
+   function renderChart(records) {
       const ctx = document.getElementById('trendChart').getContext('2d');
       if (chartInstance) chartInstance.destroy();
 
@@ -667,37 +668,65 @@
         return;
       }
 
-      const labels = records.map(r => r.date.split(' ')[0]);
+      // 將時間字串 (yyyy-MM-dd HH:mm) 轉換為帶時間的 Date 物件，確保同天不同時間的數據間距正確
+      const parseDate = (dateStr) => new Date(dateStr.replace(/-/g, '/'));
 
       if (currentMember.type === 'Adult') {
         chartInstance = new Chart(ctx, {
           type: 'line',
           data: {
-            labels: labels,
             datasets: [
-              { label: '體重 (kg)', data: records.map(r => r.weight), borderColor: '#0d6efd', backgroundColor: '#0d6efd', yAxisID: 'y' },
-              { label: '肌肉量 (kg)', data: records.map(r => r.muscleMass), borderColor: '#198754', backgroundColor: '#198754', yAxisID: 'y' },
-              { label: '體脂率 (%)', data: records.map(r => r.bodyFat), borderColor: '#dc3545', backgroundColor: '#dc3545', yAxisID: 'y1' }
+              {
+                label: '體重 (kg)',
+                data: records.map(r => ({ x: parseDate(r.date), y: r.weight })),
+                borderColor: '#0d6efd',
+                backgroundColor: '#0d6efd',
+                yAxisID: 'y'
+              },
+              {
+                label: '肌肉量 (kg)',
+                data: records.map(r => ({ x: parseDate(r.date), y: r.muscleMass })),
+                borderColor: '#198754',
+                backgroundColor: '#198754',
+                yAxisID: 'y'
+              },
+              {
+                label: '體脂率 (%)',
+                data: records.map(r => ({ x: parseDate(r.date), y: r.bodyFat })),
+                borderColor: '#dc3545',
+                backgroundColor: '#dc3545',
+                yAxisID: 'y1'
+              }
             ]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
+              x: {
+                type: 'time', // 🎯 切換為真實時間軸
+                time: {
+                  unit: 'day',
+                  displayFormats: { day: 'MM/dd' },
+                  tooltipFormat: 'yyyy-MM-dd HH:mm'
+                },
+                title: { display: false }
+              },
               y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '重量 (kg)' } },
               y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '體脂 (%)' } }
             }
           }
         });
       } else {
-        const birth = currentMember.birthDate ? new Date(currentMember.birthDate) : null;
+        // 小孩生長曲線部分同步切換為時間軸
+        const birth = currentMember.birthDate ? new Date(currentMember.birthDate.replace(/-/g, '/')) : null;
         const p97Data = [];
         const p50Data = [];
         const p3Data = [];
         const actualData = [];
 
         records.forEach(r => {
-          const recDate = new Date(r.date.replace(/-/g, '/'));
+          const recDate = parseDate(r.date);
           let ageYears = 5;
           if (birth) {
             ageYears = (recDate - birth) / (1000 * 60 * 60 * 24 * 365.25);
@@ -705,10 +734,10 @@
           }
 
           const curve = getWHOCurve(currentMember.gender, ageYears, activeChildMetric);
-          p97Data.push(curve.p97);
-          p50Data.push(curve.p50);
-          p3Data.push(curve.p3);
-          actualData.push(activeChildMetric === 'height' ? r.height : r.weight);
+          p97Data.push({ x: recDate, y: parseFloat(curve.p97) });
+          p50Data.push({ x: recDate, y: parseFloat(curve.p50) });
+          p3Data.push({ x: recDate, y: parseFloat(curve.p3) });
+          actualData.push({ x: recDate, y: activeChildMetric === 'height' ? r.height : r.weight });
         });
 
         const metricLabel = activeChildMetric === 'height' ? '身高 (cm)' : '體重 (kg)';
@@ -716,7 +745,6 @@
         chartInstance = new Chart(ctx, {
           type: 'line',
           data: {
-            labels: labels,
             datasets: [
               { label: `孩子實際 ${metricLabel}`, data: actualData, borderColor: '#0d6efd', backgroundColor: '#0d6efd', borderWidth: 3, pointRadius: 6 },
               { label: 'P97 (頂端線)', data: p97Data, borderColor: 'rgba(220, 53, 69, 0.5)', borderDash: [5, 5], pointRadius: 0 },
@@ -727,12 +755,21 @@
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            scales: { y: { title: { display: true, text: metricLabel } } }
+            scales: {
+              x: {
+                type: 'time', // 🎯 切換為真實時間軸
+                time: {
+                  unit: 'day',
+                  displayFormats: { day: 'MM/dd' },
+                  tooltipFormat: 'yyyy-MM-dd HH:mm'
+                }
+              },
+              y: { title: { display: true, text: metricLabel } }
+            }
           }
         });
       }
     }
-
     async function submitNewMember() {
       const name = document.getElementById('newMemberName').value.trim();
       const type = document.getElementById('newMemberType').value;
