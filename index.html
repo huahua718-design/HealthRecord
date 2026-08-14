@@ -56,9 +56,7 @@
         <p class="text-muted">請選擇要查看或記錄數據的成員</p>
       </div>
 
-      <div class="row g-3 my-3" id="memberGrid">
-        <!-- JS 動態生成 4 個成員卡片 -->
-      </div>
+      <div class="row g-3 my-3" id="memberGrid"></div>
 
       <div class="text-center mt-4">
         <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addMemberModal">+ 新增成員</button>
@@ -113,11 +111,23 @@
 
       <!-- 趨勢圖表 -->
       <div class="card p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
           <h5 class="fw-bold text-secondary mb-0" id="chartTitle">歷史趨勢圖</h5>
-          <div id="childChartToggle" class="btn-group btn-group-sm" style="display:none;">
-            <button class="btn btn-outline-primary active" id="btnHeight" onclick="switchChildMetric('height')">身高生長曲線 (cm)</button>
-            <button class="btn btn-outline-primary" id="btnWeight" onclick="switchChildMetric('weight')">體重生長曲線 (kg)</button>
+          
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <!-- 兒童指標切換 -->
+            <div id="childChartToggle" class="btn-group btn-group-sm" style="display:none;">
+              <button class="btn btn-outline-primary active" id="btnHeight" onclick="switchChildMetric('height')">身高</button>
+              <button class="btn btn-outline-primary" id="btnWeight" onclick="switchChildMetric('weight')">體重</button>
+            </div>
+
+            <!-- 🎯 時間範圍篩選按鈕 -->
+            <div class="btn-group btn-group-sm" id="timeRangeToggle">
+              <button class="btn btn-outline-secondary" id="btnTime30" onclick="switchTimeRange('30d')">30天</button>
+              <button class="btn btn-outline-secondary" id="btnTime90" onclick="switchTimeRange('90d')">90天</button>
+              <button class="btn btn-outline-secondary" id="btnTime1y" onclick="switchTimeRange('1y')">1年</button>
+              <button class="btn btn-outline-secondary active" id="btnTimeAll" onclick="switchTimeRange('all')">全部</button>
+            </div>
           </div>
         </div>
         <div style="position: relative; height: 320px;">
@@ -220,7 +230,7 @@
 
   <script>
     // ⚠️ 請替換為您的 Google Apps Script Web App 最新部署網址
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwJjlTNi412Yn7ygIsFiYA2jHi8p665i64s5ApVQXitcrAEZ6bFk8C99PeRku321IVC/exec";
+    const GAS_API_URL = "YOUR_GAS_WEB_APP_URL";
 
     let globalMembers = [];
     let globalRecords = [];
@@ -231,6 +241,7 @@
     let isRecording = false;
     let chartInstance = null;
     let activeChildMetric = 'height';
+    let activeTimeRange = 'all'; // 預設呈現全歷史: '30d', '90d', '1y', 'all'
 
     function showLoading(msg = '資料載入中...') {
       document.getElementById('loadingText').textContent = msg;
@@ -268,7 +279,6 @@
       initApp();
     };
 
-    // 🚀 初始化：一次下載全家資料，之後切換 0 延遲
     async function initApp() {
       showLoading('一次性載入全家數據中...');
       try {
@@ -284,7 +294,6 @@
       }
     }
 
-    // 渲染首頁 4 位成員方塊
     function renderLandingView() {
       document.getElementById('dashboardView').style.display = 'none';
       document.getElementById('landingView').style.display = 'block';
@@ -310,7 +319,6 @@
         grid.appendChild(col);
       });
 
-      // 同步更新下拉選單
       const select = document.getElementById('memberSelect');
       select.innerHTML = '';
       globalMembers.forEach(m => {
@@ -325,7 +333,6 @@
       renderLandingView();
     }
 
-    // 點擊卡片切換至成員內頁 (0 秒開)
     function selectMember(memberId) {
       currentMember = globalMembers.find(m => m.id === memberId);
       if (!currentMember) return;
@@ -342,6 +349,34 @@
       selectMember(selectVal);
     }
 
+    function switchTimeRange(range) {
+      activeTimeRange = range;
+      document.getElementById('btnTime30').classList.toggle('active', range === '30d');
+      document.getElementById('btnTime90').classList.toggle('active', range === '90d');
+      document.getElementById('btnTime1y').classList.toggle('active', range === '1y');
+      document.getElementById('btnTimeAll').classList.toggle('active', range === 'all');
+      
+      renderMemberUI();
+    }
+
+    function filterRecordsByTimeRange(records, range) {
+      if (range === 'all' || !records || records.length === 0) return records;
+
+      const now = new Date();
+      let days = 0;
+      if (range === '30d') days = 30;
+      else if (range === '90d') days = 90;
+      else if (range === '1y') days = 365;
+
+      const cutoffTime = now.getTime() - (days * 24 * 60 * 60 * 1000);
+
+      return records.filter(r => {
+        // 跨瀏覽器日期解析相容處理 (將 - 轉為 /)
+        const recDate = new Date(r.date.replace(/-/g, '/'));
+        return recDate.getTime() >= cutoffTime;
+      });
+    }
+
     function renderMemberUI() {
       document.getElementById('targetMemberName').textContent = `當前對象：${currentMember.name}`;
       
@@ -351,21 +386,21 @@
 
       if (isAdult) {
         inputEl.placeholder = '例：705 201 523 55';
-        hintEl.innerHTML = '請依序輸入：<b>體重 體脂 肌肉量 內臟脂肪</b>（以空格分隔，如 <code>70.5 20.1 52.3 5.5</code> 或不帶小數點 <code>705 201 523 55</code>）';
+        hintEl.innerHTML = '請依序輸入：<b>體重 體脂 肌肉量 內臟脂肪</b>（如 <code>70.5 20.1 52.3 5.5</code> 或不帶小數點 <code>705 201 523 55</code>）';
       } else {
         inputEl.placeholder = '例：1155 205';
-        hintEl.innerHTML = '請依序輸入：<b>身高 體重</b>（以空格分隔，如 <code>115.5 20.5</code> 或 <code>1155 205</code>）';
+        hintEl.innerHTML = '請依序輸入：<b>身高 體重</b>（如 <code>115.5 20.5</code> 或 <code>1155 205</code>）';
       }
 
       document.getElementById('childChartToggle').style.display = isAdult ? 'none' : 'inline-flex';
       document.getElementById('chartTitle').textContent = isAdult ? '歷史趨勢圖' : '兒童生長曲線對照圖 (WHO)';
 
-      // 篩選出目前成員的紀錄
       const memberRecords = globalRecords.filter(r => r.memberId === currentMember.id);
+      const filteredChartRecords = filterRecordsByTimeRange(memberRecords, activeTimeRange);
 
-      renderMetrics(memberRecords);
-      renderTable(memberRecords);
-      renderChart(memberRecords);
+      renderMetrics(memberRecords); // 最新數據恆看最新一筆
+      renderTable(memberRecords);   // 表格展示全紀錄
+      renderChart(filteredChartRecords); // 圖表根據選擇的時間區間繪製
     }
 
     async function submitQuickInput() {
@@ -381,7 +416,7 @@
         if (str.includes('.')) return parseFloat(str);
         const val = parseFloat(str);
         if (isNaN(val)) return null;
-        return val > 150 ? val / 10 : val; // 自動判斷是否為無小數點輸入
+        return val > 150 ? val / 10 : val;
       };
 
       let parsedData = {};
@@ -391,7 +426,7 @@
           weight: parseVal(tokens[0]),
           bodyFat: parseVal(tokens[1]),
           muscleMass: parseVal(tokens[2]),
-          visceralFat: parseVal(tokens[3]), // ✅ 支援小數點
+          visceralFat: parseVal(tokens[3]),
           height: null,
           transcript: `快捷單行輸入: ${text}`
         };
@@ -410,7 +445,6 @@
         const newRecord = await apiRequest('saveRecord', 'POST', { memberId: currentMember.id, parsedData });
         document.getElementById('quickInputText').value = '';
         
-        // 更新本地端資料，瞬間更新畫面
         globalRecords.push(newRecord);
         renderMemberUI();
       } finally {
@@ -453,7 +487,6 @@
       }
     }
 
-    // 🚀 錄音後：AI 解析 -> 取消彈窗 -> 直接自動寫入資料庫
     function uploadAnalyzeAndSaveAudio() {
       const mimeType = mediaRecorder.mimeType || 'audio/webm';
       const audioBlob = new Blob(audioChunks, { type: mimeType });
@@ -463,10 +496,7 @@
         const base64Audio = reader.result.split(',')[1];
         showLoading('AI 辨識語音並自動寫入中...');
         try {
-          // 1. 呼叫 AI 解析
           const parsedResult = await apiRequest('analyzeAudio', 'POST', { base64Audio, mimeType, memberId: currentMember.id });
-          
-          // 2. 直接自動儲存
           const newRecord = await apiRequest('saveRecord', 'POST', { 
             memberId: currentMember.id, 
             parsedData: parsedResult 
@@ -475,7 +505,6 @@
           document.getElementById('statusMessage').textContent = '✅ 錄音辨識成功並已自動寫入！';
           setTimeout(() => { document.getElementById('statusMessage').textContent = ''; }, 3000);
 
-          // 3. 更新前端記憶體資料並重繪畫面
           globalRecords.push(newRecord);
           renderMemberUI();
         } catch (err) {
@@ -633,6 +662,11 @@
       const ctx = document.getElementById('trendChart').getContext('2d');
       if (chartInstance) chartInstance.destroy();
 
+      if (!records || records.length === 0) {
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        return;
+      }
+
       const labels = records.map(r => r.date.split(' ')[0]);
 
       if (currentMember.type === 'Adult') {
@@ -663,7 +697,7 @@
         const actualData = [];
 
         records.forEach(r => {
-          const recDate = new Date(r.date);
+          const recDate = new Date(r.date.replace(/-/g, '/'));
           let ageYears = 5;
           if (birth) {
             ageYears = (recDate - birth) / (1000 * 60 * 60 * 24 * 365.25);
@@ -715,7 +749,6 @@
         const modal = bootstrap.Modal.getInstance(modalEl);
         if (modal) modal.hide();
         
-        // 重新初始化載入
         await initApp();
       } finally {
         hideLoading();
