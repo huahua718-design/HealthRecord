@@ -385,11 +385,11 @@
       const hintEl = document.getElementById('quickInputHint');
 
       if (isAdult) {
-        inputEl.placeholder = '例：705 201 523 55';
-        hintEl.innerHTML = '請依序輸入：<b>體重 體脂 肌肉量 內臟脂肪</b>（如 <code>70.5 20.1 52.3 5.5</code> 或不帶小數點 <code>705 201 523 55</code>）';
+        inputEl.placeholder = '例：705 201 523 130';
+        hintEl.innerHTML = '請依序輸入：<b>體重 體脂 肌肉量 內臟脂肪</b>（未點小數點將自動除以 10，如 <code>705 201 523 130</code> ➔ 70.5, 20.1, 52.3, 13.0，或直接寫小數點 <code>70.5 20.1 52.3 13.0</code>）';
       } else {
         inputEl.placeholder = '例：1155 205';
-        hintEl.innerHTML = '請依序輸入：<b>身高 體重</b>（如 <code>115.5 20.5</code> 或 <code>1155 205</code>）';
+        hintEl.innerHTML = '請依序輸入：<b>身高 體重</b>（未點小數點將自動除以 10，如 <code>1155 205</code> ➔ 115.5, 20.5，或直接寫小數點 <code>115.5 20.5</code>）';
       }
 
       document.getElementById('childChartToggle').style.display = isAdult ? 'none' : 'inline-flex';
@@ -398,9 +398,9 @@
       const memberRecords = globalRecords.filter(r => r.memberId === currentMember.id);
       const filteredChartRecords = filterRecordsByTimeRange(memberRecords, activeTimeRange);
 
-      renderMetrics(memberRecords); // 最新數據恆看最新一筆
-      renderTable(memberRecords);   // 表格展示全紀錄
-      renderChart(filteredChartRecords); // 圖表根據選擇的時間區間繪製
+      renderMetrics(memberRecords);
+      renderTable(memberRecords);
+      renderChart(filteredChartRecords);
     }
 
     async function submitQuickInput() {
@@ -411,12 +411,13 @@
       const tokens = text.split(/\s+/);
       const isAdult = currentMember.type === 'Adult';
 
+      // 🎯 修正後的通用解析邏輯：若沒點小數點，一律自動除以 10
       const parseVal = (str) => {
         if (!str) return null;
-        if (str.includes('.')) return parseFloat(str);
+        if (str.includes('.')) return parseFloat(str); // 已手動輸入小數點，原樣保留
         const val = parseFloat(str);
         if (isNaN(val)) return null;
-        return val > 150 ? val / 10 : val;
+        return val / 10; // 無小數點一律除以 10 (例如：130 -> 13.0, 50 -> 5.0, 55 -> 5.5)
       };
 
       let parsedData = {};
@@ -426,7 +427,7 @@
           weight: parseVal(tokens[0]),
           bodyFat: parseVal(tokens[1]),
           muscleMass: parseVal(tokens[2]),
-          visceralFat: parseVal(tokens[3]),
+          visceralFat: parseVal(tokens[3]), // ✅ 130 現在會精確解析為 13.0
           height: null,
           transcript: `快捷單行輸入: ${text}`
         };
@@ -451,7 +452,6 @@
         hideLoading();
       }
     }
-
     async function toggleRecording() {
       const btn = document.getElementById('recordBtn');
       const status = document.getElementById('statusMessage');
