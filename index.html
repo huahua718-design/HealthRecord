@@ -247,8 +247,9 @@
 
     // 🎯 1. GAS 預熱喚醒函式 (背景偷偷發送，不卡住 UI)
    // 🎯 修正後的預熱喚醒函式（改用後端原本就支援的 getMembers）
+   // 🎯 修正後的靜音預熱函式：直接打向 GAS 網址，絕不跳出 alert 警告
     function pingGAS() {
-      apiRequest('getMembers').catch(() => {});
+      fetch(GAS_API_URL, { mode: 'no-cors' }).catch(() => {});
     }
 
 // 🎯 2. 寬鬆性別判斷 (兼容 Boy, Male, male, 男 等各種寫法)
