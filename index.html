@@ -246,10 +246,10 @@
     let activeTimeRange = 'all'; // 預設呈現全歷史: '30d', '90d', '1y', 'all'
 
     // 🎯 1. GAS 預熱喚醒函式 (背景偷偷發送，不卡住 UI)
+   // 🎯 修正後的預熱喚醒函式（改用後端原本就支援的 getMembers）
     function pingGAS() {
-  // 隨便發送一個無害請求讓 GAS 伺服器保持清醒
-      apiRequest('ping').catch(() => {});
-      }
+      apiRequest('getMembers').catch(() => {});
+    }
 
 // 🎯 2. 寬鬆性別判斷 (兼容 Boy, Male, male, 男 等各種寫法)
     function isMaleGender(gender) {
