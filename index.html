@@ -131,8 +131,29 @@
             </div>
           </div>
         </div>
-        <div style="position: relative; height: 320px;">
-          <canvas id="trendChart"></canvas>
+        <!-- 🎯 成人三張獨立圖表 -->
+        <div id="adultChartsContainer" style="display: none;">
+          <h6 class="fw-bold text-primary mb-1">⚖️ 體重趨勢 (kg)</h6>
+          <div style="position: relative; height: 180px;" class="mb-4">
+            <canvas id="weightChart"></canvas>
+          </div>
+
+          <h6 class="fw-bold text-danger mb-1">🔥 體脂率趨勢 (%)</h6>
+          <div style="position: relative; height: 180px;" class="mb-4">
+            <canvas id="fatChart"></canvas>
+          </div>
+
+          <h6 class="fw-bold text-success mb-1">💪 肌肉量趨勢 (kg)</h6>
+          <div style="position: relative; height: 180px;">
+            <canvas id="muscleChart"></canvas>
+          </div>
+        </div>
+
+        <!-- 🎯 小孩圖表容器 -->
+        <div id="childChartContainer" style="display: none; position: relative; height: 300px;">
+          <canvas id="childChart"></canvas>
+        </div>
+      </div>
         </div>
       </div>
 
@@ -241,7 +262,7 @@
     let mediaRecorder = null;
     let audioChunks = [];
     let isRecording = false;
-    let chartInstance = null;
+   let chartInstances = []; // 🎯 改用陣列管理多個圖表實例
     let activeChildMetric = 'height';
     let activeTimeRange = 'all'; // 預設呈現全歷史: '30d', '90d', '1y', 'all'
 
@@ -402,14 +423,13 @@
       const hintEl = document.getElementById('quickInputHint');
 
       if (isAdult) {
-        inputEl.placeholder = '例：705 201 523 130';
-        hintEl.innerHTML = '請依序輸入：<b>體重 體脂 肌肉量 內臟脂肪</b>（未點小數點將自動除以 10，如 <code>705 201 523 130</code> ➔ 70.5, 20.1, 52.3, 13.0，或直接寫小數點 <code>70.5 20.1 52.3 13.0</code>）';
+        inputEl.placeholder = '例：705, 201, 523, 130';
+        hintEl.innerHTML = '請依序輸入：<b>體重, 體脂, 肌肉量, 內臟脂肪</b>（用逗號分隔，未點小數點自動除以 10，如 <code>705, 201, 523, 130</code> ➔ 70.5, 20.1, 52.3, 13.0）';
       } else {
-        inputEl.placeholder = '例：1155 205';
-        hintEl.innerHTML = '請依序輸入：<b>身高 體重</b>（未點小數點將自動除以 10，如 <code>1155 205</code> ➔ 115.5, 20.5，或直接寫小數點 <code>115.5 20.5</code>）';
+        inputEl.placeholder = '例：1155, 205';
+        hintEl.innerHTML = '請依序輸入：<b>身高, 體重</b>（用逗號分隔，未點小數點自動除以 10，如 <code>1155, 205</code> ➔ 115.5, 20.5）';
       }
 
-      // 🎯 新增這行：點擊輸入框時自動背景預熱 GAS 伺服器
       inputEl.onfocus = () => pingGAS();
 
       document.getElementById('childChartToggle').style.display = isAdult ? 'none' : 'inline-flex';
@@ -427,31 +447,31 @@
       const text = document.getElementById('quickInputText').value.trim();
       if (!text) { alert('請輸入數據'); return; }
 
-      const tokens = text.split(/\s+/);
+      // 🎯 支援英文逗號(,)與中文逗號(，)分隔
+      const tokens = text.replace(/，/g, ',').split(',').map(s => s.trim()).filter(s => s !== '');
       const isAdult = currentMember.type === 'Adult';
 
-      // 🎯 修正後的通用解析邏輯：若沒點小數點，一律自動除以 10
       const parseVal = (str) => {
         if (!str) return null;
-        if (str.includes('.')) return parseFloat(str); // 已手動輸入小數點，原樣保留
+        if (str.includes('.')) return parseFloat(str);
         const val = parseFloat(str);
         if (isNaN(val)) return null;
-        return val / 10; // 無小數點一律除以 10 (例如：130 -> 13.0, 50 -> 5.0, 55 -> 5.5)
+        return val / 10;
       };
 
       let parsedData = {};
       if (isAdult) {
-        if (tokens.length < 4) { alert('成人格式請依序輸入 4 個數字：體重 體脂 肌肉量 內臟脂肪'); return; }
+        if (tokens.length < 4) { alert('成人格式請依逗號分隔輸入 4 個數字：體重, 體脂, 肌肉量, 內臟脂肪'); return; }
         parsedData = {
           weight: parseVal(tokens[0]),
           bodyFat: parseVal(tokens[1]),
           muscleMass: parseVal(tokens[2]),
-          visceralFat: parseVal(tokens[3]), // ✅ 130 現在會精確解析為 13.0
+          visceralFat: parseVal(tokens[3]),
           height: null,
           transcript: `快捷單行輸入: ${text}`
         };
       } else {
-        if (tokens.length < 2) { alert('小孩格式請依序輸入 2 個數字：身高 體重'); return; }
+        if (tokens.length < 2) { alert('小孩格式請依逗號分隔輸入 2 個數字：身高, 體重'); return; }
         parsedData = {
           height: parseVal(tokens[0]),
           weight: parseVal(tokens[1]),
@@ -644,7 +664,21 @@
       }
 
       body.innerHTML = '';
-      const reversed = [...records].reverse();
+
+      // 🎯 僅保留 7 日內的歷史紀錄
+      const now = new Date();
+      const cutoff7Days = now.getTime() - (7 * 24 * 60 * 60 * 1000);
+      const recentRecords = records.filter(r => {
+        const recDate = new Date(r.date.replace(/-/g, '/'));
+        return recDate.getTime() >= cutoff7Days;
+      });
+
+      const reversed = [...recentRecords].reverse();
+
+      if (reversed.length === 0) {
+        body.innerHTML = `<tr><td colspan="${currentMember.type === 'Adult' ? 6 : 4}" class="text-center text-muted py-3">近 7 天內無歷史紀錄</td></tr>`;
+        return;
+      }
 
       reversed.forEach(r => {
         const tr = document.createElement('tr');
@@ -668,7 +702,6 @@
         body.appendChild(tr);
       });
     }
-
     function getWHOCurve(gender, ageYears, metric) {
       let baseP50, p3Offset, p97Offset;
       const gFactor = gender === 'Boy' ? 1.0 : 0.96;
@@ -690,71 +723,90 @@
       };
     }
 
-   function renderChart(records) {
-      const ctx = document.getElementById('trendChart').getContext('2d');
-      if (chartInstance) chartInstance.destroy();
+   function clearCharts() {
+      chartInstances.forEach(c => c.destroy());
+      chartInstances = [];
+    }
+
+    function renderChart(records) {
+      clearCharts();
+
+      const adultContainer = document.getElementById('adultChartsContainer');
+      const childContainer = document.getElementById('childChartContainer');
 
       if (!records || records.length === 0) {
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        adultContainer.style.display = 'none';
+        childContainer.style.display = 'none';
         return;
       }
 
-      // 將時間字串 (yyyy-MM-dd HH:mm) 轉換為帶時間的 Date 物件，確保同天不同時間的數據間距正確
       const parseDate = (dateStr) => new Date(dateStr.replace(/-/g, '/'));
 
+      // 共通 X 軸設定
+      const commonXAxis = {
+        type: 'time',
+        time: {
+          unit: 'day',
+          displayFormats: { day: 'MM/dd' },
+          tooltipFormat: 'yyyy-MM-dd HH:mm'
+        }
+      };
+
       if (currentMember.type === 'Adult') {
-        chartInstance = new Chart(ctx, {
+        adultContainer.style.display = 'block';
+        childContainer.style.display = 'none';
+
+        // 1. 體重圖表
+        const ctxW = document.getElementById('weightChart').getContext('2d');
+        chartInstances.push(new Chart(ctxW, {
           type: 'line',
           data: {
-            datasets: [
-              {
-                label: '體重 (kg)',
-                data: records.map(r => ({ x: parseDate(r.date), y: r.weight })),
-                borderColor: '#0d6efd',
-                backgroundColor: '#0d6efd',
-                yAxisID: 'y'
-              },
-              {
-                label: '肌肉量 (kg)',
-                data: records.map(r => ({ x: parseDate(r.date), y: r.muscleMass })),
-                borderColor: '#198754',
-                backgroundColor: '#198754',
-                yAxisID: 'y'
-              },
-              {
-                label: '體脂率 (%)',
-                data: records.map(r => ({ x: parseDate(r.date), y: r.bodyFat })),
-                borderColor: '#dc3545',
-                backgroundColor: '#dc3545',
-                yAxisID: 'y1'
-              }
-            ]
+            datasets: [{
+              label: '體重 (kg)',
+              data: records.map(r => ({ x: parseDate(r.date), y: r.weight })),
+              borderColor: '#0d6efd',
+              backgroundColor: '#0d6efd'
+            }]
           },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              x: {
-                type: 'time', // 🎯 切換為真實時間軸
-                time: {
-                  unit: 'day',
-                  displayFormats: { day: 'MM/dd' },
-                  tooltipFormat: 'yyyy-MM-dd HH:mm'
-                },
-                title: { display: false }
-              },
-              y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '重量 (kg)' } },
-              y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '體脂 (%)' } }
-            }
-          }
-        });
+          options: { responsive: true, maintainAspectRatio: false, scales: { x: commonXAxis, y: { title: { display: true, text: 'kg' } } } }
+        }));
+
+        // 2. 體脂率圖表
+        const ctxF = document.getElementById('fatChart').getContext('2d');
+        chartInstances.push(new Chart(ctxF, {
+          type: 'line',
+          data: {
+            datasets: [{
+              label: '體脂率 (%)',
+              data: records.map(r => ({ x: parseDate(r.date), y: r.bodyFat })),
+              borderColor: '#dc3545',
+              backgroundColor: '#dc3545'
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, scales: { x: commonXAxis, y: { title: { display: true, text: '%' } } } }
+        }));
+
+        // 3. 肌肉量圖表
+        const ctxM = document.getElementById('muscleChart').getContext('2d');
+        chartInstances.push(new Chart(ctxM, {
+          type: 'line',
+          data: {
+            datasets: [{
+              label: '肌肉量 (kg)',
+              data: records.map(r => ({ x: parseDate(r.date), y: r.muscleMass })),
+              borderColor: '#198754',
+              backgroundColor: '#198754'
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, scales: { x: commonXAxis, y: { title: { display: true, text: 'kg' } } } }
+        }));
+
       } else {
-        // 小孩生長曲線部分同步切換為時間軸
+        adultContainer.style.display = 'none';
+        childContainer.style.display = 'block';
+
         const birth = currentMember.birthDate ? new Date(currentMember.birthDate.replace(/-/g, '/')) : null;
-        const p97Data = [];
-        const p50Data = [];
-        const p3Data = [];
-        const actualData = [];
+        const p97Data = [], p50Data = [], p3Data = [], actualData = [];
 
         records.forEach(r => {
           const recDate = parseDate(r.date);
@@ -772,8 +824,9 @@
         });
 
         const metricLabel = activeChildMetric === 'height' ? '身高 (cm)' : '體重 (kg)';
+        const ctxC = document.getElementById('childChart').getContext('2d');
 
-        chartInstance = new Chart(ctx, {
+        chartInstances.push(new Chart(ctxC, {
           type: 'line',
           data: {
             datasets: [
@@ -783,22 +836,8 @@
               { label: 'P3 (底端線)', data: p3Data, borderColor: 'rgba(255, 193, 7, 0.8)', borderDash: [5, 5], pointRadius: 0 }
             ]
           },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-              x: {
-                type: 'time', // 🎯 切換為真實時間軸
-                time: {
-                  unit: 'day',
-                  displayFormats: { day: 'MM/dd' },
-                  tooltipFormat: 'yyyy-MM-dd HH:mm'
-                }
-              },
-              y: { title: { display: true, text: metricLabel } }
-            }
-          }
-        });
+          options: { responsive: true, maintainAspectRatio: false, scales: { x: commonXAxis, y: { title: { display: true, text: metricLabel } } } }
+        }));
       }
     }
     async function submitNewMember() {
