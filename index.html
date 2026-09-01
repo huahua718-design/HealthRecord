@@ -81,7 +81,15 @@
         <div class="mb-4">
           <label class="form-label fw-bold">⌨️ 快捷單行輸入：</label>
           <div class="input-group">
-            <input type="text" id="quickInputText" class="form-control" placeholder="載入中...">
+            <input type="text" 
+       id="quickInputText" 
+       class="form-control" 
+       placeholder="例：705, 201, 523, 130"
+       inputmode="url" 
+       autocapitalize="none" 
+       autocorrect="off" 
+       spellcheck="false" 
+       lang="en">
             <button class="btn btn-primary px-4" id="btnQuickSubmit" onclick="submitQuickInput()">寫入</button>
           </div>
           <div id="quickInputHint" class="form-text text-muted mt-2"></div>
