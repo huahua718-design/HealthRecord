@@ -430,11 +430,11 @@
       const hintEl = document.getElementById('quickInputHint');
 
       if (isAdult) {
-        inputEl.placeholder = '例：705, 201, 523, 130';
-        hintEl.innerHTML = '請依序輸入：<b>體重, 體脂, 肌肉量, 內臟脂肪</b>（用逗號分隔，未點小數點自動除以 10，如 <code>705, 201, 523, 130</code> ➔ 70.5, 20.1, 52.3, 13.0）';
+        inputEl.placeholder = '例：705.201.523.130';
+        hintEl.innerHTML = '請用<b>小數點</b>依序連寫：<b>體重.體脂.肌肉量.內臟脂肪</b>（系統自動除以 10，如 <code>705.201.523.130</code> ➔ 70.5, 20.1, 52.3, 13.0）';
       } else {
-        inputEl.placeholder = '例：1155, 205';
-        hintEl.innerHTML = '請依序輸入：<b>身高, 體重</b>（用逗號分隔，未點小數點自動除以 10，如 <code>1155, 205</code> ➔ 115.5, 20.5）';
+        inputEl.placeholder = '例：1155.205';
+        hintEl.innerHTML = '請用<b>小數點</b>依序連寫：<b>身高.體重</b>（系統自動除以 10，如 <code>1155.205</code> ➔ 115.5, 20.5）';
       }
 
       inputEl.onfocus = () => pingGAS();
