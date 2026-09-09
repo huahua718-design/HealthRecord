@@ -89,7 +89,7 @@
        autocapitalize="none" 
        autocorrect="off" 
        spellcheck="false">
-            <button class="btn btn-primary px-4" id="btnQuickSubmit" onclick="submitQuickInput()">寫入</button>
+            <button class="btn btn-primary px-4" id="btnQuickSubmit" onclick="">寫入</button>
           </div>
           <div id="quickInputHint" class="form-text text-muted mt-2"></div>
         </div>
@@ -454,13 +454,13 @@
       const text = document.getElementById('quickInputText').value.trim();
       if (!text) { alert('請輸入數據'); return; }
 
-      // 🎯 支援英文逗號(,)與中文逗號(，)分隔
-      const tokens = text.replace(/，/g, ',').split(',').map(s => s.trim()).filter(s => s !== '');
+      // 🎯 以小數點 (.) 進行切割，並取出各個數字段落
+      const tokens = text.split('.').map(s => s.trim()).filter(s => s !== '');
       const isAdult = currentMember.type === 'Adult';
 
+      // 🎯 自動將輸入的整數除以 10 (例如：705 -> 70.5)
       const parseVal = (str) => {
         if (!str) return null;
-        if (str.includes('.')) return parseFloat(str);
         const val = parseFloat(str);
         if (isNaN(val)) return null;
         return val / 10;
@@ -468,7 +468,7 @@
 
       let parsedData = {};
       if (isAdult) {
-        if (tokens.length < 4) { alert('成人格式請依逗號分隔輸入 4 個數字：體重, 體脂, 肌肉量, 內臟脂肪'); return; }
+        if (tokens.length < 4) { alert('成人格式請用小數點分隔輸入 4 個數字：體重.體脂.肌肉量.內臟脂肪 (例: 705.201.523.130)'); return; }
         parsedData = {
           weight: parseVal(tokens[0]),
           bodyFat: parseVal(tokens[1]),
@@ -478,7 +478,7 @@
           transcript: `快捷單行輸入: ${text}`
         };
       } else {
-        if (tokens.length < 2) { alert('小孩格式請依逗號分隔輸入 2 個數字：身高, 體重'); return; }
+        if (tokens.length < 2) { alert('小孩格式請用小數點分隔輸入 2 個數字：身高.體重 (例: 1155.205)'); return; }
         parsedData = {
           height: parseVal(tokens[0]),
           weight: parseVal(tokens[1]),
