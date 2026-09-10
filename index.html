@@ -77,22 +77,24 @@
       <div class="card p-4">
         <h4 id="targetMemberName" class="text-primary fw-bold mb-3">成員數據輸入</h4>
         
-        <!-- 快捷單行輸入 -->
-        <div class="mb-4">
-          <label class="form-label fw-bold">⌨️ 快捷單行輸入：</label>
-          <div class="input-group">
-            <input type="text" 
-       id="quickInputText" 
-       class="form-control" 
-       placeholder="例：705.201.523.130"
-       inputmode="decimal" 
-       autocapitalize="none" 
-       autocorrect="off" 
-       spellcheck="false">
-            <button class="btn btn-primary px-4" id="btnQuickSubmit" onclick="">寫入</button>
-          </div>
-          <div id="quickInputHint" class="form-text text-muted mt-2"></div>
-        </div>
+       <!-- 快捷單行輸入 -->
+<div class="mb-4">
+  <label class="form-label fw-bold">⌨️ 快捷單行輸入：</label>
+  <div class="input-group">
+    <input type="text" 
+           id="quickInputText" 
+           class="form-control" 
+           placeholder="例：705.201.523.130"
+           inputmode="decimal" 
+           autocapitalize="none" 
+           autocorrect="off" 
+           spellcheck="false"
+           onkeydown="if(event.key==='Enter') submitQuickInput()">
+    <!-- 🎯 補上 onclick="submitQuickInput()" -->
+    <button class="btn btn-primary px-4" id="btnQuickSubmit" onclick="submitQuickInput()">寫入</button>
+  </div>
+  <div id="quickInputHint" class="form-text text-muted mt-2"></div>
+</div>
 
         <hr class="my-3">
 
