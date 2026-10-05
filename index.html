@@ -737,6 +737,73 @@
       chartInstances = [];
     }
 
+    // 🎯 1. 每日數據整合與 7 日移動平均計算函式
+    function processRecordsWith7DayMA(records) {
+      if (!records || records.length === 0) return [];
+
+      // A. 同一天資料先進行平均（依 YYYY-MM-DD 分組）
+      const dailyMap = {};
+      records.forEach(r => {
+        if (!r.date) return;
+        // 取得 YYYY-MM-DD 日期字串
+        const dateObj = new Date(r.date.replace(/-/g, '/'));
+        if (isNaN(dateObj.getTime())) return;
+
+        const dateStr = dateObj.getFullYear() + '-' + 
+                        String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + 
+                        String(dateObj.getDate()).padStart(2, '0');
+
+        if (!dailyMap[dateStr]) {
+          dailyMap[dateStr] = { 
+            dateStr, 
+            time: new Date(dateStr.replace(/-/g, '/')).getTime(), 
+            weights: [], fats: [], muscles: [] 
+          };
+        }
+        if (r.weight != null) dailyMap[dateStr].weights.push(Number(r.weight));
+        if (r.bodyFat != null) dailyMap[dateStr].fats.push(Number(r.bodyFat));
+        if (r.muscleMass != null) dailyMap[dateStr].muscles.push(Number(r.muscleMass));
+      });
+
+      // B. 轉為陣列並按時間排序
+      const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+      const sortedDays = Object.values(dailyMap)
+        .sort((a, b) => a.time - b.time)
+        .map(d => ({
+          dateStr: d.dateStr,
+          time: d.time,
+          weight: avg(d.weights),
+          bodyFat: avg(d.fats),
+          muscleMass: avg(d.muscles)
+        }));
+
+      // C. 計算往回 7 天內的移動平均 (7-Day Moving Average)
+      const SIX_DAYS_MS = 6 * 24 * 60 * 60 * 1000; // 前6天 + 當天 = 7天視窗
+
+      return sortedDays.map(curr => {
+        // 篩選出 [當天 - 6天 ~ 當天] 範圍內的所有日數據
+        const windowDays = sortedDays.filter(d => d.time <= curr.time && d.time >= (curr.time - SIX_DAYS_MS));
+
+        const calcMA = (key) => {
+          const vals = windowDays.map(d => d[key]).filter(v => v !== null && !isNaN(v));
+          return vals.length ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(1)) : null;
+        };
+
+        const dateObj = new Date(curr.dateStr.replace(/-/g, '/'));
+
+        return {
+          dateObj,
+          rawWeight: curr.weight ? Number(curr.weight.toFixed(1)) : null,
+          maWeight: calcMA('weight'),
+          rawFat: curr.bodyFat ? Number(curr.bodyFat.toFixed(1)) : null,
+          maFat: calcMA('bodyFat'),
+          rawMuscle: curr.muscleMass ? Number(curr.muscleMass.toFixed(1)) : null,
+          maMuscle: calcMA('muscleMass')
+        };
+      });
+    }
+
+    // 🎯 2. 更新後的繪圖函式（加入移動平均線）
     function renderChart(records) {
       clearCharts();
 
@@ -749,15 +816,13 @@
         return;
       }
 
-      const parseDate = (dateStr) => new Date(dateStr.replace(/-/g, '/'));
-
-      // 共通 X 軸設定
+      // X 軸時間格式設定
       const commonXAxis = {
         type: 'time',
         time: {
           unit: 'day',
           displayFormats: { day: 'MM/dd' },
-          tooltipFormat: 'yyyy-MM-dd HH:mm'
+          tooltipFormat: 'yyyy-MM-dd'
         }
       };
 
@@ -765,55 +830,59 @@
         adultContainer.style.display = 'block';
         childContainer.style.display = 'none';
 
-        // 1. 體重圖表
-        const ctxW = document.getElementById('weightChart').getContext('2d');
-        chartInstances.push(new Chart(ctxW, {
-          type: 'line',
-          data: {
-            datasets: [{
-              label: '體重 (kg)',
-              data: records.map(r => ({ x: parseDate(r.date), y: r.weight })),
-              borderColor: '#0d6efd',
-              backgroundColor: '#0d6efd'
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false, scales: { x: commonXAxis, y: { title: { display: true, text: 'kg' } } } }
-        }));
+        // 取得計算好 MA 的資料
+        const processedData = processRecordsWith7DayMA(records);
 
-        // 2. 體脂率圖表
-        const ctxF = document.getElementById('fatChart').getContext('2d');
-        chartInstances.push(new Chart(ctxF, {
-          type: 'line',
-          data: {
-            datasets: [{
-              label: '體脂率 (%)',
-              data: records.map(r => ({ x: parseDate(r.date), y: r.bodyFat })),
-              borderColor: '#dc3545',
-              backgroundColor: '#dc3545'
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false, scales: { x: commonXAxis, y: { title: { display: true, text: '%' } } } }
-        }));
+        // 建構標準雙線圖表 (每日點 + 7日移動平均線)
+        const createDualLineChart = (canvasId, label, rawKey, maKey, mainColor) => {
+          const ctx = document.getElementById(canvasId).getContext('2d');
+          return new Chart(ctx, {
+            type: 'line',
+            data: {
+              datasets: [
+                {
+                  label: `7日移動平均 (${label})`,
+                  data: processedData.map(d => ({ x: d.dateObj, y: d[maKey] })),
+                  borderColor: mainColor,
+                  backgroundColor: mainColor,
+                  borderWidth: 3,
+                  pointRadius: 3,
+                  tension: 0.3 // 平滑曲線
+                },
+                {
+                  label: `每日實測`,
+                  data: processedData.map(d => ({ x: d.dateObj, y: d[rawKey] })),
+                  borderColor: 'rgba(108, 117, 125, 0.4)',
+                  backgroundColor: 'rgba(108, 117, 125, 0.4)',
+                  borderDash: [3, 3],
+                  borderWidth: 1,
+                  pointRadius: 4,
+                  pointStyle: 'circle'
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: { 
+                x: commonXAxis, 
+                y: { title: { display: true, text: label } } 
+              }
+            }
+          });
+        };
 
-        // 3. 肌肉量圖表
-        const ctxM = document.getElementById('muscleChart').getContext('2d');
-        chartInstances.push(new Chart(ctxM, {
-          type: 'line',
-          data: {
-            datasets: [{
-              label: '肌肉量 (kg)',
-              data: records.map(r => ({ x: parseDate(r.date), y: r.muscleMass })),
-              borderColor: '#198754',
-              backgroundColor: '#198754'
-            }]
-          },
-          options: { responsive: true, maintainAspectRatio: false, scales: { x: commonXAxis, y: { title: { display: true, text: 'kg' } } } }
-        }));
+        // 繪製三個成人的獨立趨勢圖
+        chartInstances.push(createDualLineChart('weightChart', 'kg', 'rawWeight', 'maWeight', '#0d6efd'));
+        chartInstances.push(createDualLineChart('fatChart', '%', 'rawFat', 'maFat', '#dc3545'));
+        chartInstances.push(createDualLineChart('muscleChart', 'kg', 'rawMuscle', 'maMuscle', '#198754'));
 
       } else {
+        // 小孩繪圖區塊保持 WHO 生長曲線
         adultContainer.style.display = 'none';
         childContainer.style.display = 'block';
 
+        const parseDate = (dateStr) => new Date(dateStr.replace(/-/g, '/'));
         const birth = currentMember.birthDate ? new Date(currentMember.birthDate.replace(/-/g, '/')) : null;
         const p97Data = [], p50Data = [], p3Data = [], actualData = [];
 
